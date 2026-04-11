@@ -13,6 +13,7 @@ import {
   Zap,
   ArrowRight,
 } from 'lucide-react'
+import { sanitizeMessage, sanitizePhoneNumber, sanitizeThoughtProcess } from '@/lib/sanitize'
 import type { InboxMessage } from '@/lib/types'
 
 interface ThoughtProcessPanelProps {
@@ -50,15 +51,15 @@ export function ThoughtProcessPanel({ message }: ThoughtProcessPanelProps) {
             </div>
             <div className="p-3 rounded-lg bg-secondary/50 border border-border">
               <p className="text-xs font-mono text-muted-foreground mb-1">
-                {message.customerNumber}
+                {sanitizePhoneNumber(message.customerNumber)}
               </p>
-              <p className="text-sm">{message.message}</p>
+              <p className="text-sm">{sanitizeMessage(message.message)}</p>
             </div>
           </div>
 
           <Separator />
 
-          {/* Thought Process */}
+          {/* Thought Process - Sanitized */}
           {message.aiThoughtProcess ? (
             <div className="space-y-3">
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -66,7 +67,7 @@ export function ThoughtProcessPanel({ message }: ThoughtProcessPanelProps) {
                 Reasoning Chain
               </div>
               <div className="space-y-2">
-                {message.aiThoughtProcess.split('.').filter(Boolean).map((thought, index) => (
+                {sanitizeThoughtProcess(message.aiThoughtProcess).split('.').filter(Boolean).map((thought, index) => (
                   <div
                     key={index}
                     className="flex items-start gap-2 p-2 rounded-lg bg-accent/5 border border-accent/10"
@@ -119,7 +120,7 @@ export function ThoughtProcessPanel({ message }: ThoughtProcessPanelProps) {
                   <MessageSquare className="w-3 h-3" />
                   Client
                 </span>
-                <span>{message.clientName}</span>
+                <span>{sanitizeMessage(message.clientName)}</span>
               </div>
             </div>
           </div>
