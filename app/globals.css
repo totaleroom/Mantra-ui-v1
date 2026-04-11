@@ -4,44 +4,54 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --background: oklch(0.97 0.015 100);
-  --foreground: oklch(0.18 0.04 145);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.18 0.04 145);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.18 0.04 145);
-  --primary: oklch(0.28 0.07 145);
-  --primary-foreground: oklch(0.98 0 0);
-  --secondary: oklch(0.96 0.03 100);
-  --secondary-foreground: oklch(0.28 0.07 145);
-  --muted: oklch(0.94 0.02 100);
-  --muted-foreground: oklch(0.52 0.03 145);
-  --accent: oklch(0.88 0.22 120);
-  --accent-foreground: oklch(0.18 0.08 145);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.90 0.02 100);
-  --input: oklch(0.90 0.02 100);
-  --ring: oklch(0.88 0.22 120);
-  --chart-1: oklch(0.88 0.22 120);
-  --chart-2: oklch(0.28 0.07 145);
-  --chart-3: oklch(0.70 0.18 120);
-  --chart-4: oklch(0.55 0.14 135);
-  --chart-5: oklch(0.40 0.10 145);
-  --radius: 1rem;
+  /* Mantra AI Command Center - Dark Futuristic Theme */
+  --background: oklch(0.13 0.01 260);
+  --foreground: oklch(0.95 0.01 260);
+  --card: oklch(0.16 0.015 260);
+  --card-foreground: oklch(0.95 0.01 260);
+  --popover: oklch(0.14 0.012 260);
+  --popover-foreground: oklch(0.95 0.01 260);
+  --primary: oklch(0.72 0.19 160);
+  --primary-foreground: oklch(0.13 0.01 260);
+  --secondary: oklch(0.22 0.02 260);
+  --secondary-foreground: oklch(0.88 0.01 260);
+  --muted: oklch(0.20 0.015 260);
+  --muted-foreground: oklch(0.60 0.02 260);
+  --accent: oklch(0.65 0.18 280);
+  --accent-foreground: oklch(0.98 0.01 260);
+  --destructive: oklch(0.60 0.22 25);
+  --destructive-foreground: oklch(0.98 0 0);
+  --border: oklch(0.25 0.02 260);
+  --input: oklch(0.20 0.015 260);
+  --ring: oklch(0.72 0.19 160);
+  
+  /* Chart colors */
+  --chart-1: oklch(0.72 0.19 160);
+  --chart-2: oklch(0.65 0.18 280);
+  --chart-3: oklch(0.70 0.16 45);
+  --chart-4: oklch(0.65 0.15 200);
+  --chart-5: oklch(0.60 0.20 330);
+  
+  --radius: 0.75rem;
 
-  /* Custom finance tokens */
-  --lime: oklch(0.88 0.22 120);
-  --lime-dark: oklch(0.78 0.20 120);
-  --forest: oklch(0.28 0.07 145);
-  --forest-dark: oklch(0.20 0.06 145);
-  --cream: oklch(0.97 0.015 100);
-  --cream-dark: oklch(0.93 0.025 100);
+  /* Status colors */
+  --success: oklch(0.72 0.19 160);
+  --warning: oklch(0.80 0.18 85);
+  --error: oklch(0.60 0.22 25);
+  --info: oklch(0.65 0.15 240);
+  
+  /* Mantra specific tokens */
+  --neon-green: oklch(0.72 0.19 160);
+  --neon-purple: oklch(0.65 0.18 280);
+  --neon-blue: oklch(0.65 0.15 240);
+  --surface-1: oklch(0.16 0.015 260);
+  --surface-2: oklch(0.19 0.018 260);
+  --surface-3: oklch(0.22 0.02 260);
 }
 
 @theme inline {
-  --font-sans: var(--font-plus-jakarta);
-  --font-mono: 'Geist Mono', 'Geist Mono Fallback';
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-jetbrains);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -66,16 +76,22 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
-  --radius-sm: calc(var(--radius) - 6px);
-  --radius-md: calc(var(--radius) - 4px);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 6px);
-  --color-lime: var(--lime);
-  --color-lime-dark: var(--lime-dark);
-  --color-forest: var(--forest);
-  --color-forest-dark: var(--forest-dark);
-  --color-cream: var(--cream);
-  --color-cream-dark: var(--cream-dark);
+  --radius-xl: calc(var(--radius) + 4px);
+  
+  /* Custom colors */
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-error: var(--error);
+  --color-info: var(--info);
+  --color-neon-green: var(--neon-green);
+  --color-neon-purple: var(--neon-purple);
+  --color-neon-blue: var(--neon-blue);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
 }
 
 @layer base {
@@ -95,43 +111,48 @@
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
-  .bg-lime {
-    background-color: var(--lime);
+  
+  /* Glow effects */
+  .glow-green {
+    box-shadow: 0 0 20px oklch(0.72 0.19 160 / 0.3);
   }
-  .bg-lime-dark {
-    background-color: var(--lime-dark);
+  .glow-purple {
+    box-shadow: 0 0 20px oklch(0.65 0.18 280 / 0.3);
   }
-  .bg-forest {
-    background-color: var(--forest);
+  .glow-blue {
+    box-shadow: 0 0 20px oklch(0.65 0.15 240 / 0.3);
   }
-  .bg-forest-dark {
-    background-color: var(--forest-dark);
+  
+  /* Status indicators */
+  .status-connected {
+    @apply bg-success text-primary-foreground;
   }
-  .bg-cream {
-    background-color: var(--cream);
+  .status-disconnected {
+    @apply bg-error text-destructive-foreground;
   }
-  .bg-cream-dark {
-    background-color: var(--cream-dark);
+  .status-connecting {
+    @apply bg-warning text-primary-foreground;
   }
-  .text-lime {
-    color: var(--lime);
+  
+  /* Grid pattern background */
+  .grid-pattern {
+    background-image: 
+      linear-gradient(to right, oklch(0.25 0.02 260 / 0.3) 1px, transparent 1px),
+      linear-gradient(to bottom, oklch(0.25 0.02 260 / 0.3) 1px, transparent 1px);
+    background-size: 24px 24px;
   }
-  .text-forest {
-    color: var(--forest);
+  
+  /* Animated pulse for live indicators */
+  .pulse-live {
+    animation: pulse-live 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   }
-  .text-cream {
-    color: var(--cream);
-  }
-  .ring-lime {
-    --tw-ring-color: var(--lime);
-  }
-  .hover\:bg-lime-dark:hover {
-    background-color: var(--lime-dark);
-  }
-  .hover\:bg-forest-dark:hover {
-    background-color: var(--forest-dark);
-  }
-  .border-forest\/20 {
-    border-color: color-mix(in srgb, var(--forest) 20%, transparent);
+  
+  @keyframes pulse-live {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
   }
 }

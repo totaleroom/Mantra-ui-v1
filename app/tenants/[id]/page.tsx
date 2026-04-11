@@ -1,0 +1,425 @@
+'use client'
+
+import { useState } from 'react'
+import { useParams } from 'next/navigation'
+import Link from 'next/link'
+import { DashboardLayout } from '@/components/dashboard/dashboard-layout'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { Slider } from '@/components/ui/slider'
+import { Switch } from '@/components/ui/switch'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
+  ArrowLeft,
+  Brain,
+  Database,
+  Thermometer,
+  Clock,
+  Save,
+  RotateCcw,
+  Zap,
+  MessageSquare,
+} from 'lucide-react'
+import {
+  mockClients,
+  mockClientAIConfigs,
+  mockAIModels,
+  mockWhatsAppInstances,
+} from '@/lib/mock-data'
+
+export default function TenantDetailPage() {
+  const params = useParams()
+  const clientId = parseInt(params.id as string, 10)
+
+  const client = mockClients.find((c) => c.id === clientId)
+  const existingConfig = mockClientAIConfigs.find((c) => c.clientId === clientId)
+  const instances = mockWhatsAppInstances.filter((i) => i.clientId === clientId)
+
+  const [config, setConfig] = useState({
+    modelId: existingConfig?.modelId || 'gpt-4-turbo',
+    systemPrompt: existingConfig?.systemPrompt || '',
+    vectorNamespace: existingConfig?.vectorNamespace || '',
+    temperature: existingConfig?.temperature || 0.7,
+    memoryTtlDays: existingConfig?.memoryTtlDays || 4,
+    memoryEnabled: true,
+  })
+
+  if (!client) {
+    return (
+      <DashboardLayout title="Tenant Not Found" description="">
+        <div className="flex flex-col items-center justify-center h-96">
+          <p className="text-muted-foreground mb-4">Tenant not found</p>
+          <Link href="/tenants">
+            <Button variant="outline">
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back to Tenants
+            </Button>
+          </Link>
+        </div>
+      </DashboardLayout>
+    )
+  }
+
+  return (
+    <DashboardLayout
+      title={client.name}
+      description="Tenant AI configuration and settings"
+    >
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <Link href="/tenants">
+            <Button variant="ghost" size="sm">
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back to Tenants
+            </Button>
+          </Link>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm">
+              <RotateCcw className="w-4 h-4 mr-2" />
+              Reset
+            </Button>
+            <Button size="sm" className="bg-primary text-primary-foreground">
+              <Save className="w-4 h-4 mr-2" />
+              Save Changes
+            </Button>
+          </div>
+        </div>
+
+        {/* Stats Cards */}
+        <div className="grid gap-4 md:grid-cols-4">
+          <Card className="bg-card border-border">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Status</p>
+                  <Badge
+                    variant="outline"
+                    className={
+                      client.isActive
+                        ? 'bg-success/10 text-success border-success/20 mt-1'
+                        : 'bg-error/10 text-error border-error/20 mt-1'
+                    }
+                  >
+                    {client.isActive ? 'Active' : 'Inactive'}
+                  </Badge>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="bg-card border-border">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Token Balance</p>
+                  <p className="text-2xl font-bold">
+                    {(client.tokenBalance / 1000).toFixed(1)}k
+                  </p>
+                </div>
+                <Zap className="w-5 h-5 text-warning" />
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                of {(client.tokenLimit / 1000).toFixed(0)}k limit
+              </p>
+            </CardContent>
+          </Card>
+          <Card className="bg-card border-border">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">WA Instances</p>
+                  <p className="text-2xl font-bold">{instances.length}</p>
+                </div>
+                <MessageSquare className="w-5 h-5 text-info" />
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                {instances.filter((i) => i.status === 'CONNECTED').length} connected
+              </p>
+            </CardContent>
+          </Card>
+          <Card className="bg-card border-border">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Created</p>
+                  <p className="text-sm font-medium mt-1">
+                    {client.createdAt.toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                    })}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Configuration Tabs */}
+        <Tabs defaultValue="ai-persona" className="space-y-6">
+          <TabsList className="bg-secondary">
+            <TabsTrigger value="ai-persona">AI Persona</TabsTrigger>
+            <TabsTrigger value="knowledge-base">Knowledge Base</TabsTrigger>
+            <TabsTrigger value="memory">Memory Settings</TabsTrigger>
+            <TabsTrigger value="limits">Token Limits</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="ai-persona" className="space-y-6">
+            <Card className="bg-card border-border">
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Brain className="w-5 h-5 text-primary" />
+                  AI Persona Configuration
+                </CardTitle>
+                <CardDescription>
+                  Define how the AI assistant behaves for this tenant
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {/* Model Selection */}
+                <div className="space-y-2">
+                  <Label>AI Model</Label>
+                  <Select
+                    value={config.modelId}
+                    onValueChange={(value) =>
+                      setConfig({ ...config, modelId: value })
+                    }
+                  >
+                    <SelectTrigger className="bg-secondary border-border">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {mockAIModels.map((model) => (
+                        <SelectItem key={model.id} value={model.id}>
+                          <div className="flex items-center gap-2">
+                            <span>{model.name}</span>
+                            <span className="text-xs text-muted-foreground">
+                              ({model.provider})
+                            </span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* System Prompt */}
+                <div className="space-y-2">
+                  <Label>System Prompt</Label>
+                  <Textarea
+                    placeholder="You are a helpful customer service agent for..."
+                    value={config.systemPrompt}
+                    onChange={(e) =>
+                      setConfig({ ...config, systemPrompt: e.target.value })
+                    }
+                    className="bg-secondary border-border min-h-[150px] font-mono text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Define the AI persona, tone, and behavioral guidelines
+                  </p>
+                </div>
+
+                {/* Temperature */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <Label className="flex items-center gap-2">
+                      <Thermometer className="w-4 h-4" />
+                      Temperature
+                    </Label>
+                    <Badge variant="outline" className="bg-secondary font-mono">
+                      {config.temperature}
+                    </Badge>
+                  </div>
+                  <Slider
+                    value={[config.temperature as number]}
+                    onValueChange={([value]) =>
+                      setConfig({ ...config, temperature: value })
+                    }
+                    min={0}
+                    max={1}
+                    step={0.1}
+                    className="w-full"
+                  />
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>Precise (0.0)</span>
+                    <span>Creative (1.0)</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="knowledge-base">
+            <Card className="bg-card border-border">
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Database className="w-5 h-5 text-primary" />
+                  RAG Knowledge Base
+                </CardTitle>
+                <CardDescription>
+                  Configure vector database isolation for tenant-specific knowledge
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="space-y-2">
+                  <Label>Vector Namespace</Label>
+                  <Input
+                    placeholder="e.g., acme-kb"
+                    value={config.vectorNamespace}
+                    onChange={(e) =>
+                      setConfig({ ...config, vectorNamespace: e.target.value })
+                    }
+                    className="bg-secondary border-border font-mono"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Isolates this tenant&apos;s knowledge base in the vector store
+                  </p>
+                </div>
+
+                <div className="p-4 rounded-lg bg-secondary/50 border border-border">
+                  <h4 className="text-sm font-medium mb-2">Upload Documents</h4>
+                  <p className="text-xs text-muted-foreground mb-4">
+                    Upload PDFs, text files, or other documents to build the knowledge base
+                  </p>
+                  <Button variant="outline" size="sm">
+                    Upload Files
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="memory">
+            <Card className="bg-card border-border">
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Clock className="w-5 h-5 text-primary" />
+                  Customer Memory Settings
+                </CardTitle>
+                <CardDescription>
+                  Configure transient memory for customer conversations
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {/* Memory Toggle */}
+                <div className="flex items-center justify-between p-4 rounded-lg bg-secondary/50 border border-border">
+                  <div>
+                    <p className="font-medium">Customer Memory</p>
+                    <p className="text-sm text-muted-foreground">
+                      Remember customer context across conversations
+                    </p>
+                  </div>
+                  <Switch
+                    checked={config.memoryEnabled}
+                    onCheckedChange={(checked) =>
+                      setConfig({ ...config, memoryEnabled: checked })
+                    }
+                  />
+                </div>
+
+                {/* TTL Slider */}
+                {config.memoryEnabled && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <Label>Memory TTL (Time to Live)</Label>
+                      <Badge variant="outline" className="bg-secondary font-mono">
+                        {config.memoryTtlDays} days
+                      </Badge>
+                    </div>
+                    <Slider
+                      value={[config.memoryTtlDays]}
+                      onValueChange={([value]) =>
+                        setConfig({ ...config, memoryTtlDays: value })
+                      }
+                      min={1}
+                      max={4}
+                      step={1}
+                      className="w-full"
+                    />
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>1 day</span>
+                      <span>2 days</span>
+                      <span>3 days</span>
+                      <span>4 days (max)</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Customer memories are automatically purged after this period
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="limits">
+            <Card className="bg-card border-border">
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Zap className="w-5 h-5 text-primary" />
+                  Token Limits
+                </CardTitle>
+                <CardDescription>
+                  Manage token allocation for this tenant
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Current Balance</Label>
+                    <Input
+                      value={client.tokenBalance.toLocaleString()}
+                      readOnly
+                      className="bg-secondary border-border font-mono"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Token Limit</Label>
+                    <Input
+                      type="number"
+                      defaultValue={client.tokenLimit}
+                      className="bg-secondary border-border font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Usage</Label>
+                  <div className="h-4 rounded-full bg-muted overflow-hidden">
+                    <div
+                      className="h-full bg-primary transition-all"
+                      style={{
+                        width: `${(client.tokenBalance / client.tokenLimit) * 100}%`,
+                      }}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {((client.tokenBalance / client.tokenLimit) * 100).toFixed(1)}%
+                    of limit used
+                  </p>
+                </div>
+
+                <div className="p-4 rounded-lg bg-warning/10 border border-warning/20">
+                  <p className="text-sm text-warning">
+                    When token balance reaches zero, AI responses will be paused until
+                    more tokens are allocated.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </div>
+    </DashboardLayout>
+  )
+}
