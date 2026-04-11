@@ -201,6 +201,10 @@
   
   /* Card hover effect */
   .card-interactive {
-    @apply transition-all duration-200 hover:shadow-soft-lg hover:border-primary/20;
+    @apply transition-all duration-200;
+  }
+  .card-interactive:hover {
+    box-shadow: 0 4px 16px -4px rgba(0, 0, 0, 0.1), 0 8px 32px -8px rgba(0, 0, 0, 0.06);
+    border-color: oklch(from var(--primary) l c h / 0.2);
   }
 }
