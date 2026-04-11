@@ -1,40 +1,215 @@
-​📑 PRD: Mantra AI (Agentic SaaS Edition)
-​Version: 2.0 (Production Ready)
-Infrastructure: Hybrid (Next.js Vercel | Go & DB VPS 4GB RAM)
-Core Mission: Automasi Agentic Workflow untuk 50+ UMKM dengan WhatsApp Gateway.
-​1. Executive Summary
-​Mantra AI adalah platform Multi-tenant Agentic SaaS yang menghubungkan UMKM dengan AI Agent otonom melalui WhatsApp. Sistem ini fokus pada efisiensi biaya (multi-provider fallback), privasi (transient memory 4 hari), dan transparansi operasional melalui "Omniscient Inbox".
-2. Tech Stack (The "Lean" Machine)
-​Frontend: Next.js 14 (App Router) + ShadcnUI + Tailwind (Deployed on Vercel).
-​Backend: Go (Golang) Fiber/Gin (Deployed on VPS Debian 12).
-​Database: PostgreSQL (Relational) & Redis (Transient Memory & Queue).
-​WA Bridge: Evolution API v2 (Dockerized).
-​Connectivity: Cloudflare Tunnel (Secure Bridge Vercel-to-VPS).
-​3. Feature Matrix (MoSCoW)
-​Must-Have (M)
-​Multi-tenant Instance: Isolasi data antar klien (1 VPS untuk 50+ klien).
-​AI Provider Fallback: Rotasi otomatis antar Groq, OpenRouter, dan OpenAI jika terjadi rate limit atau downtime.
-​WhatsApp QR Scanner: Integrasi langsung di dashboard untuk pairing device klien.
-​RAG Isolation: Setiap klien memiliki Knowledge Base sendiri yang tidak saling tercampur.
-​Should-Have (S)
-​Omniscient Inbox: Dashboard pemantau seluruh chat aktif secara real-time.
-​AI Thought Process: Kolom khusus yang menampilkan "logika berpikir" AI sebelum menjawab customer.
-​Token Billing & Limit: Sistem kuota token per klien dengan notifikasi otomatis.
-​Could-Have (C)
-​Transient Memory (TTL 4 Days): Memori chat customer yang otomatis terhapus setelah 4 hari untuk privasi.
-​System Diagnosis: Panel monitoring kesehatan database, redis, dan WA API dengan saran perbaikan otomatis.
-​4. Core Business Logic (The Intelligence Hub)
-​Memory Logic: Menggunakan Redis untuk menyimpan context chat. Data memiliki TTL (Time-To-Live) 4 hari. Sebelum AI menjawab, sistem akan melakukan summarization memori singkat untuk menghemat token.
-​Fallback Logic: Jika Provider Utama (misal: Groq) mengembalikan error 429 atau 5xx, sistem otomatis berpindah ke Provider Cadangan (misal: OpenRouter) dalam waktu < 500ms.
-​Deployment Logic: Frontend di Vercel memanggil Backend di VPS melalui API URL terenkripsi Cloudflare Tunnel.
-​5. Dashboard UI Guidelines
-​Aesthetic: Dark Mode, Data-Dense, Minimalist (Industrial/Cyber-SaaS).
-​Mobile-First: Sidebar harus menjadi drawer di layar kecil, tabel harus scrollable/card-view.
-​Interactive: Menggunakan Skeleton loading dan Toasts notification untuk setiap aksi teknis.
-​6. Deployment Strategy (Hermes Guide)
-​Setiap komponen dibungkus dalam Docker kontainer dengan limitasi RAM ketat:
-​Postgres: 512MB RAM Limit.
-​Redis: 256MB RAM Limit.
-​Evolution API: 1GB RAM Limit.
-​Go Backend: 256MB RAM Limit.
-​Total Usable RAM: ~2.5GB (Aman untuk VPS 4GB).
+# PRD: Mantra AI (Agentic SaaS Edition)
+
+**Version:** 2.1 (Production Ready - FinFlow Aesthetic)  
+**Infrastructure:** Hybrid (Next.js Vercel | Go & DB VPS 4GB RAM)  
+**Core Mission:** Automasi Agentic Workflow untuk 50+ UMKM dengan WhatsApp Gateway.
+
+---
+
+## 1. Executive Summary
+
+Mantra AI adalah platform Multi-tenant Agentic SaaS yang menghubungkan UMKM dengan AI Agent otonom melalui WhatsApp. Sistem ini fokus pada efisiensi biaya (multi-provider fallback), privasi (transient memory 4 hari), dan transparansi operasional melalui "Omniscient Inbox".
+
+---
+
+## 2. Tech Stack (The "Lean" Machine)
+
+| Layer | Technology | Deployment |
+|-------|------------|------------|
+| **Frontend** | Next.js 14 (App Router) + ShadcnUI + Tailwind | Vercel |
+| **Backend** | Go (Golang) Fiber | VPS Debian 12 |
+| **Database** | PostgreSQL (Relational) & Redis (Transient Memory) | VPS Docker |
+| **WA Bridge** | Evolution API v2 | VPS Docker |
+| **Connectivity** | Cloudflare Tunnel | Secure Bridge |
+
+---
+
+## 3. Feature Matrix (MoSCoW)
+
+### Must-Have (M)
+- **Multi-tenant Instance:** Isolasi data antar klien (1 VPS untuk 50+ klien)
+- **AI Provider Fallback:** Rotasi otomatis antar Groq, OpenRouter, dan OpenAI jika terjadi rate limit atau downtime
+- **WhatsApp QR Scanner:** Integrasi langsung di dashboard untuk pairing device klien
+- **RAG Isolation:** Setiap klien memiliki Knowledge Base sendiri yang tidak saling tercampur
+
+### Should-Have (S)
+- **Omniscient Inbox:** Dashboard pemantau seluruh chat aktif secara real-time
+- **AI Thought Process:** Kolom khusus yang menampilkan "logika berpikir" AI sebelum menjawab customer
+- **Token Billing & Limit:** Sistem kuota token per klien dengan notifikasi otomatis
+
+### Could-Have (C)
+- **Transient Memory (TTL 4 Days):** Memori chat customer yang otomatis terhapus setelah 4 hari untuk privasi
+- **System Diagnosis:** Panel monitoring kesehatan database, redis, dan WA API dengan saran perbaikan otomatis
+
+---
+
+## 4. Core Business Logic (The Intelligence Hub)
+
+### Memory Logic
+Menggunakan Redis untuk menyimpan context chat. Data memiliki TTL (Time-To-Live) 4 hari. Sebelum AI menjawab, sistem akan melakukan summarization memori singkat untuk menghemat token.
+
+### Fallback Logic
+Jika Provider Utama (misal: Groq) mengembalikan error 429 atau 5xx, sistem otomatis berpindah ke Provider Cadangan (misal: OpenRouter) dalam waktu < 500ms.
+
+### Deployment Logic
+Frontend di Vercel memanggil Backend di VPS melalui API URL terenkripsi Cloudflare Tunnel.
+
+---
+
+## 5. Dashboard UI Guidelines (FinFlow Aesthetic)
+
+### Design Philosophy
+Mengadopsi aesthetic dari FinFlow Modern Finance template - clean, professional, dan sophisticated dengan fokus pada readability dan data density.
+
+### Color Palette
+
+#### Light Mode (Default)
+| Token | Value | Usage |
+|-------|-------|-------|
+| `--background` | `oklch(0.985 0 0)` | Page background - Off-white |
+| `--card` | `oklch(1 0 0)` | Card surfaces - Pure white |
+| `--primary` | `oklch(0.205 0 0)` | Primary actions - Near black |
+| `--muted` | `oklch(0.97 0 0)` | Subtle backgrounds |
+| `--border` | `oklch(0.922 0 0)` | Borders - Light gray |
+
+#### Dark Mode (Preferred)
+| Token | Value | Usage |
+|-------|-------|-------|
+| `--background` | `oklch(0.145 0 0)` | Page background - Deep charcoal |
+| `--card` | `oklch(0.175 0 0)` | Card surfaces - Elevated |
+| `--primary` | `oklch(0.985 0 0)` | Primary actions - Off-white |
+| `--muted` | `oklch(0.269 0 0)` | Subtle backgrounds |
+| `--border` | `oklch(0.269 0 0)` | Borders - Subtle gray |
+
+#### Status Colors (Semantic)
+| Status | Light Mode | Dark Mode | Usage |
+|--------|------------|-----------|-------|
+| Success | `oklch(0.6 0.118 160)` | `oklch(0.696 0.17 162.48)` | Connected, Active |
+| Warning | `oklch(0.75 0.15 85)` | `oklch(0.769 0.188 70.08)` | Pending, Attention |
+| Error | `oklch(0.577 0.245 27.325)` | `oklch(0.645 0.246 16.439)` | Disconnected, Failed |
+| Info | `oklch(0.6 0.118 240)` | `oklch(0.488 0.243 264.376)` | Information |
+
+### Typography
+- **Sans-serif:** Inter (clean, professional, highly legible)
+- **Monospace:** JetBrains Mono (technical data, phone numbers, IDs)
+- **Font Weights:** 400 (body), 500 (labels), 600 (headings), 700 (emphasis)
+
+### Design Principles
+
+1. **Neutral First**
+   - Use grayscale as the primary palette
+   - Color only for semantic meaning (status, alerts, actions)
+   - Avoid decorative colors that don't convey information
+
+2. **Subtle Elevation**
+   - Use soft shadows instead of harsh borders
+   - Card elevation creates visual hierarchy
+   - `.shadow-soft` and `.shadow-soft-lg` utility classes
+
+3. **Data Density**
+   - Maximize information per screen
+   - Compact but readable typography
+   - Progressive disclosure for complex data
+
+4. **Minimalist Interaction**
+   - Hover states use subtle opacity/shadow changes
+   - Focus states use ring outline
+   - Transitions at 200ms for responsiveness
+
+### Component Styling
+
+#### Cards
+```css
+/* Clean card with subtle shadow */
+.card {
+  @apply bg-card border border-border rounded-lg shadow-soft;
+}
+
+/* Interactive card with hover effect */
+.card-interactive {
+  @apply transition-all duration-200 hover:shadow-soft-lg hover:border-primary/20;
+}
+```
+
+#### Status Indicators
+```css
+/* Connected - Teal/Green tint */
+.status-connected {
+  @apply bg-success/10 text-success border border-success/20;
+}
+
+/* Disconnected - Red tint */
+.status-disconnected {
+  @apply bg-error/10 text-error border border-error/20;
+}
+
+/* Pending - Amber tint */
+.status-connecting {
+  @apply bg-warning/10 text-warning border border-warning/20;
+}
+```
+
+#### Buttons
+- **Primary:** Solid dark (light mode) / solid light (dark mode)
+- **Secondary:** Subtle background with border
+- **Ghost:** Transparent with hover background
+- **Destructive:** Red accent, used sparingly
+
+### Mobile-First Responsive
+- **Sidebar:** Sheet/Drawer on mobile (<1024px)
+- **Tables:** Card-stack view on mobile
+- **Modals:** Full-screen on mobile, centered on desktop
+- **Navigation:** Bottom sheet or hamburger menu
+
+### Skeleton Loading
+All data-fetching components must show skeleton states using ShadcnUI Skeleton component with matching dimensions.
+
+### Notification Toasts
+Every user action (Save, Delete, Connect, Error) must trigger a Sonner toast notification with appropriate styling.
+
+---
+
+## 6. Route Structure
+
+| Route | Access | Description |
+|-------|--------|-------------|
+| `/` | All roles | Command Center overview |
+| `/ai-hub` | Admin+ | AI Provider management |
+| `/whatsapp` | Admin+ | WhatsApp instance management |
+| `/inbox` | All roles | Omniscient message inbox |
+| `/tenants` | Admin+ | Tenant list |
+| `/tenants/[id]` | Admin+ | Tenant configuration |
+| `/diagnosis` | SUPER_ADMIN | System health monitoring |
+| `/settings` | SUPER_ADMIN | Global settings |
+
+---
+
+## 7. Deployment Strategy (Hermes Guide)
+
+Setiap komponen dibungkus dalam Docker kontainer dengan limitasi RAM ketat:
+
+| Service | RAM Limit | Notes |
+|---------|-----------|-------|
+| PostgreSQL | 512MB | Primary database |
+| Redis | 256MB | Transient memory & queue |
+| Evolution API | 1GB | WhatsApp bridge |
+| Go Backend | 256MB | API server |
+
+**Total Usable RAM:** ~2.5GB (Aman untuk VPS 4GB)
+
+---
+
+## 8. Changelog
+
+### v2.1 (Current)
+- **Aesthetic Overhaul:** Migrated from neon cyberpunk theme to FinFlow-inspired clean neutral palette
+- **Design Tokens:** Updated all CSS custom properties to use grayscale-first approach
+- **Status Colors:** Changed from neon indicators to subtle tinted backgrounds
+- **Shadow System:** Replaced glow effects with soft shadows
+- **Typography:** Maintained Inter + JetBrains Mono pairing
+
+### v2.0
+- Initial production-ready version with cyberpunk aesthetic
+- Full multi-tenant architecture
+- AI provider fallback system
+- WhatsApp Evolution API integration

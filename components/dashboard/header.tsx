@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { ThemeToggle } from '@/components/dashboard/theme-toggle'
 
 interface HeaderProps {
   title: string
@@ -38,6 +39,9 @@ export function Header({ title, description }: HeaderProps) {
             className="w-64 pl-9 bg-secondary border-border"
           />
         </div>
+
+        {/* Theme toggle */}
+        <ThemeToggle />
 
         {/* Notifications */}
         <Button variant="ghost" size="icon" className="relative">

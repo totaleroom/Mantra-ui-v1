@@ -2,9 +2,10 @@
 
 > Final Integration Summary for Backend Developers and Hermes Agent
 
-**Version:** 2.0 Production Ready  
+**Version:** 2.1 Production Ready (FinFlow Aesthetic)  
 **Generated:** April 2026  
-**Frontend Status:** Complete and deployed on Vercel
+**Frontend Status:** Complete and deployed on Vercel  
+**Design System:** FinFlow-inspired neutral palette with light/dark mode support
 
 ---
 
@@ -217,6 +218,10 @@ PUT    /api/settings                  # Update settings
 | `app/tenants/page.tsx` | Responsive table/card view |
 | `components/whatsapp/qr-code-dialog.tsx` | Responsive, base64 support |
 | `README.md` | Comprehensive documentation |
+| `app/globals.css` | FinFlow neutral color palette |
+| `docs/PRD.md` | Updated aesthetic guidelines |
+| `components/dashboard/theme-toggle.tsx` | Light/dark mode toggle |
+| `components/dashboard/header.tsx` | Added theme toggle |
 
 ---
 
