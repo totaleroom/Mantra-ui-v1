@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { DashboardLayout } from '@/components/dashboard/dashboard-layout'
 import { WhatsAppInstanceCard } from '@/components/whatsapp/instance-card'
 import { CreateInstanceDialog } from '@/components/whatsapp/create-instance-dialog'
@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   Select,
   SelectContent,
@@ -17,66 +18,75 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Plus, Search, Wifi, WifiOff, RefreshCw, AlertTriangle } from 'lucide-react'
-import { mockWhatsAppInstances, mockClients } from '@/lib/mock-data'
+import {
+  useWhatsAppInstances,
+  useDeleteWhatsAppInstance,
+  useDisconnectWhatsAppInstance,
+} from '@/hooks/use-whatsapp'
+import { useTenants } from '@/hooks/use-tenant'
+import { toast } from 'sonner'
 import type { WhatsAppInstance } from '@/lib/types'
 
 export default function WhatsAppPage() {
-  const [instances, setInstances] = useState<WhatsAppInstance[]>(mockWhatsAppInstances)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [qrDialogInstance, setQrDialogInstance] = useState<WhatsAppInstance | null>(null)
 
-  const filteredInstances = instances.filter((instance) => {
-    const matchesSearch =
-      instance.instanceName.toLowerCase().includes(search.toLowerCase()) ||
-      mockClients.find((c) => c.id === instance.clientId)?.name.toLowerCase().includes(search.toLowerCase())
-    const matchesStatus = statusFilter === 'all' || instance.status === statusFilter
-    return matchesSearch && matchesStatus
-  })
+  // Fetch data
+  const { data: instances, isLoading, refetch } = useWhatsAppInstances()
+  const { data: clients } = useTenants()
+  const deleteInstance = useDeleteWhatsAppInstance()
+  const disconnectInstance = useDisconnectWhatsAppInstance()
 
-  const connectedCount = instances.filter((i) => i.status === 'CONNECTED').length
-  const disconnectedCount = instances.filter((i) => i.status === 'DISCONNECTED').length
-  const connectingCount = instances.filter((i) => i.status === 'CONNECTING').length
-  const errorCount = instances.filter((i) => i.status === 'ERROR').length
+  // Filter instances
+  const filteredInstances = useMemo(() => {
+    if (!instances) return []
+    return instances.filter((instance) => {
+      const client = clients?.find((c) => c.id === instance.clientId)
+      const matchesSearch =
+        instance.instanceName.toLowerCase().includes(search.toLowerCase()) ||
+        client?.name.toLowerCase().includes(search.toLowerCase())
+      const matchesStatus = statusFilter === 'all' || instance.status === statusFilter
+      return matchesSearch && matchesStatus
+    })
+  }, [instances, clients, search, statusFilter])
 
-  const handleCreateInstance = (data: { instanceName: string; clientId: number }) => {
-    const newInstance: WhatsAppInstance = {
-      id: Math.max(...instances.map((i) => i.id)) + 1,
-      clientId: data.clientId,
-      instanceName: data.instanceName,
-      instanceApiKey: null,
-      webhookUrl: null,
-      status: 'DISCONNECTED',
-      updatedAt: new Date(),
+  // Calculate stats
+  const stats = useMemo(() => {
+    if (!instances) return { connected: 0, disconnected: 0, connecting: 0, error: 0 }
+    return {
+      connected: instances.filter((i) => i.status === 'CONNECTED').length,
+      disconnected: instances.filter((i) => i.status === 'DISCONNECTED').length,
+      connecting: instances.filter((i) => i.status === 'CONNECTING').length,
+      error: instances.filter((i) => i.status === 'ERROR').length,
     }
-    setInstances([...instances, newInstance])
-    setIsCreateDialogOpen(false)
-  }
+  }, [instances])
 
-  const handleDeleteInstance = (id: number) => {
-    setInstances(instances.filter((i) => i.id !== id))
+  const handleDeleteInstance = async (id: number) => {
+    try {
+      await deleteInstance.mutateAsync(id)
+      toast.success('Instance deleted successfully')
+    } catch {
+      toast.error('Failed to delete instance')
+    }
   }
 
   const handleScanQR = (instance: WhatsAppInstance) => {
     setQrDialogInstance(instance)
   }
 
-  const handleConnectInstance = (id: number) => {
-    setInstances(
-      instances.map((i) =>
-        i.id === id ? { ...i, status: 'CONNECTED' as const, updatedAt: new Date() } : i
-      )
-    )
-    setQrDialogInstance(null)
+  const handleDisconnectInstance = async (instanceName: string) => {
+    try {
+      await disconnectInstance.mutateAsync(instanceName)
+      toast.success('Instance disconnected')
+    } catch {
+      toast.error('Failed to disconnect instance')
+    }
   }
 
-  const handleDisconnectInstance = (id: number) => {
-    setInstances(
-      instances.map((i) =>
-        i.id === id ? { ...i, status: 'DISCONNECTED' as const, updatedAt: new Date() } : i
-      )
-    )
+  const getClientName = (clientId: number) => {
+    return clients?.find((c) => c.id === clientId)?.name || 'Unknown Client'
   }
 
   return (
@@ -92,7 +102,7 @@ export default function WhatsAppPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Connected</p>
-                  <p className="text-2xl font-bold text-success">{connectedCount}</p>
+                  <p className="text-2xl font-bold text-success">{stats.connected}</p>
                 </div>
                 <div className="p-3 rounded-lg bg-success/10">
                   <Wifi className="w-5 h-5 text-success" />
@@ -105,7 +115,7 @@ export default function WhatsAppPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Disconnected</p>
-                  <p className="text-2xl font-bold text-muted-foreground">{disconnectedCount}</p>
+                  <p className="text-2xl font-bold text-muted-foreground">{stats.disconnected}</p>
                 </div>
                 <div className="p-3 rounded-lg bg-muted">
                   <WifiOff className="w-5 h-5 text-muted-foreground" />
@@ -118,7 +128,7 @@ export default function WhatsAppPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Connecting</p>
-                  <p className="text-2xl font-bold text-warning">{connectingCount}</p>
+                  <p className="text-2xl font-bold text-warning">{stats.connecting}</p>
                 </div>
                 <div className="p-3 rounded-lg bg-warning/10">
                   <RefreshCw className="w-5 h-5 text-warning" />
@@ -131,7 +141,7 @@ export default function WhatsAppPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Errors</p>
-                  <p className="text-2xl font-bold text-error">{errorCount}</p>
+                  <p className="text-2xl font-bold text-error">{stats.error}</p>
                 </div>
                 <div className="p-3 rounded-lg bg-error/10">
                   <AlertTriangle className="w-5 h-5 text-error" />
@@ -167,6 +177,14 @@ export default function WhatsAppPage() {
                 </SelectContent>
               </Select>
               <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => refetch()}
+                className="shrink-0"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </Button>
+              <Button
                 onClick={() => setIsCreateDialogOpen(true)}
                 className="bg-primary text-primary-foreground hover:bg-primary/90"
               >
@@ -188,20 +206,32 @@ export default function WhatsAppPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {filteredInstances.map((instance) => {
-              const client = mockClients.find((c) => c.id === instance.clientId)
-              return (
+            {isLoading ? (
+              // Loading skeletons
+              Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="p-4 rounded-lg bg-secondary/50 flex items-center justify-between">
+                  <div className="space-y-2">
+                    <Skeleton className="h-5 w-40" />
+                    <Skeleton className="h-4 w-24" />
+                  </div>
+                  <div className="flex gap-2">
+                    <Skeleton className="h-9 w-24" />
+                    <Skeleton className="h-9 w-9" />
+                  </div>
+                </div>
+              ))
+            ) : filteredInstances.length > 0 ? (
+              filteredInstances.map((instance) => (
                 <WhatsAppInstanceCard
                   key={instance.id}
                   instance={instance}
-                  clientName={client?.name || 'Unknown Client'}
+                  clientName={getClientName(instance.clientId)}
                   onScanQR={handleScanQR}
                   onDelete={handleDeleteInstance}
-                  onDisconnect={handleDisconnectInstance}
+                  onDisconnect={() => handleDisconnectInstance(instance.instanceName)}
                 />
-              )
-            })}
-            {filteredInstances.length === 0 && (
+              ))
+            ) : (
               <div className="text-center py-12 text-muted-foreground">
                 <WifiOff className="w-12 h-12 mx-auto mb-4 opacity-50" />
                 <p>No instances found</p>
@@ -215,14 +245,11 @@ export default function WhatsAppPage() {
       <CreateInstanceDialog
         open={isCreateDialogOpen}
         onOpenChange={setIsCreateDialogOpen}
-        onSubmit={handleCreateInstance}
-        clients={mockClients}
       />
 
       <QRCodeDialog
         instance={qrDialogInstance}
         onClose={() => setQrDialogInstance(null)}
-        onConnect={handleConnectInstance}
       />
     </DashboardLayout>
   )

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { DashboardLayout } from '@/components/dashboard/dashboard-layout'
 import { AIProviderCard } from '@/components/ai-hub/ai-provider-card'
 import { AddProviderDialog } from '@/components/ai-hub/add-provider-dialog'
@@ -9,60 +9,91 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Plus, ArrowUpDown, AlertTriangle, CheckCircle } from 'lucide-react'
-import { mockAIProviders, mockAIModels } from '@/lib/mock-data'
-import type { AIProvider } from '@/lib/types'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Plus, ArrowUpDown, AlertTriangle, CheckCircle, RefreshCw } from 'lucide-react'
+import {
+  useAIProviders,
+  useDeleteAIProvider,
+  useToggleAIProvider,
+  useUpdateProviderPriorities,
+  useAllModels,
+} from '@/hooks/use-ai-provider'
+import { toast } from 'sonner'
 
 export default function AIHubPage() {
-  const [providers, setProviders] = useState<AIProvider[]>(mockAIProviders)
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
 
-  const globalProviders = providers.filter((p) => p.clientId === null)
-  const clientProviders = providers.filter((p) => p.clientId !== null)
+  // Fetch data
+  const { data: providers, isLoading, refetch } = useAIProviders()
+  const { data: models, isLoading: isLoadingModels } = useAllModels()
+  const deleteProvider = useDeleteAIProvider()
+  const toggleProvider = useToggleAIProvider()
+  const updatePriorities = useUpdateProviderPriorities()
 
-  const handleReorderProvider = (id: number, direction: 'up' | 'down') => {
-    const index = providers.findIndex((p) => p.id === id)
+  // Separate global and client providers
+  const { globalProviders, clientProviders } = useMemo(() => {
+    if (!providers) return { globalProviders: [], clientProviders: [] }
+    return {
+      globalProviders: providers.filter((p) => p.clientId === null).sort((a, b) => a.priority - b.priority),
+      clientProviders: providers.filter((p) => p.clientId !== null).sort((a, b) => a.priority - b.priority),
+    }
+  }, [providers])
+
+  // Calculate stats
+  const stats = useMemo(() => {
+    if (!providers) return { total: 0, active: 0, errors: 0 }
+    return {
+      total: providers.length,
+      active: providers.filter((p) => p.isActive).length,
+      errors: providers.filter((p) => p.lastError).length,
+    }
+  }, [providers])
+
+  const handleReorderProvider = async (id: number, direction: 'up' | 'down') => {
+    if (!providers) return
+
+    const sortedProviders = [...providers].sort((a, b) => a.priority - b.priority)
+    const index = sortedProviders.findIndex((p) => p.id === id)
     if (index === -1) return
 
-    const newProviders = [...providers]
     const targetIndex = direction === 'up' ? index - 1 : index + 1
+    if (targetIndex < 0 || targetIndex >= sortedProviders.length) return
 
-    if (targetIndex < 0 || targetIndex >= newProviders.length) return
+    // Create new priorities
+    const newPriorities = sortedProviders.map((p, i) => {
+      if (i === index) return { id: p.id, priority: targetIndex + 1 }
+      if (i === targetIndex) return { id: p.id, priority: index + 1 }
+      return { id: p.id, priority: i + 1 }
+    })
 
-    // Swap priorities
-    const currentPriority = newProviders[index].priority
-    newProviders[index].priority = newProviders[targetIndex].priority
-    newProviders[targetIndex].priority = currentPriority
-
-    // Sort by priority
-    newProviders.sort((a, b) => a.priority - b.priority)
-    setProviders(newProviders)
-  }
-
-  const handleToggleProvider = (id: number) => {
-    setProviders(
-      providers.map((p) =>
-        p.id === id ? { ...p, isActive: !p.isActive } : p
-      )
-    )
-  }
-
-  const handleDeleteProvider = (id: number) => {
-    setProviders(providers.filter((p) => p.id !== id))
-  }
-
-  const handleAddProvider = (provider: Omit<AIProvider, 'id' | 'updatedAt'>) => {
-    const newProvider: AIProvider = {
-      ...provider,
-      id: Math.max(...providers.map((p) => p.id)) + 1,
-      updatedAt: new Date(),
+    try {
+      await updatePriorities.mutateAsync(newPriorities)
+      toast.success('Provider order updated')
+    } catch {
+      toast.error('Failed to update provider order')
     }
-    setProviders([...providers, newProvider])
-    setIsAddDialogOpen(false)
   }
 
-  const activeCount = providers.filter((p) => p.isActive).length
-  const errorCount = providers.filter((p) => p.lastError).length
+  const handleToggleProvider = async (id: number) => {
+    const provider = providers?.find((p) => p.id === id)
+    if (!provider) return
+
+    try {
+      await toggleProvider.mutateAsync({ id, isActive: !provider.isActive })
+      toast.success(`Provider ${provider.isActive ? 'disabled' : 'enabled'}`)
+    } catch {
+      toast.error('Failed to toggle provider')
+    }
+  }
+
+  const handleDeleteProvider = async (id: number) => {
+    try {
+      await deleteProvider.mutateAsync(id)
+      toast.success('Provider deleted')
+    } catch {
+      toast.error('Failed to delete provider')
+    }
+  }
 
   return (
     <DashboardLayout
@@ -77,7 +108,7 @@ export default function AIHubPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Total Providers</p>
-                  <p className="text-2xl font-bold">{providers.length}</p>
+                  <p className="text-2xl font-bold">{stats.total}</p>
                 </div>
                 <div className="p-3 rounded-lg bg-primary/10">
                   <ArrowUpDown className="w-5 h-5 text-primary" />
@@ -90,7 +121,7 @@ export default function AIHubPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Active</p>
-                  <p className="text-2xl font-bold text-success">{activeCount}</p>
+                  <p className="text-2xl font-bold text-success">{stats.active}</p>
                 </div>
                 <div className="p-3 rounded-lg bg-success/10">
                   <CheckCircle className="w-5 h-5 text-success" />
@@ -103,7 +134,7 @@ export default function AIHubPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">With Errors</p>
-                  <p className="text-2xl font-bold text-warning">{errorCount}</p>
+                  <p className="text-2xl font-bold text-warning">{stats.errors}</p>
                 </div>
                 <div className="p-3 rounded-lg bg-warning/10">
                   <AlertTriangle className="w-5 h-5 text-warning" />
@@ -116,7 +147,7 @@ export default function AIHubPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Available Models</p>
-                  <p className="text-2xl font-bold">{mockAIModels.length}</p>
+                  <p className="text-2xl font-bold">{models?.length ?? 0}</p>
                 </div>
                 <Badge variant="outline" className="bg-info/10 text-info border-info/20">
                   Live
@@ -133,10 +164,15 @@ export default function AIHubPage() {
               <TabsTrigger value="models">Model Selector</TabsTrigger>
               <TabsTrigger value="fallback">Fallback Logic</TabsTrigger>
             </TabsList>
-            <Button onClick={() => setIsAddDialogOpen(true)} className="bg-primary text-primary-foreground hover:bg-primary/90">
-              <Plus className="w-4 h-4 mr-2" />
-              Add Provider
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="icon" onClick={() => refetch()}>
+                <RefreshCw className="w-4 h-4" />
+              </Button>
+              <Button onClick={() => setIsAddDialogOpen(true)} className="bg-primary text-primary-foreground hover:bg-primary/90">
+                <Plus className="w-4 h-4 mr-2" />
+                Add Provider
+              </Button>
+            </div>
           </div>
 
           <TabsContent value="providers" className="space-y-6">
@@ -149,9 +185,18 @@ export default function AIHubPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                {globalProviders
-                  .sort((a, b) => a.priority - b.priority)
-                  .map((provider, index) => (
+                {isLoading ? (
+                  Array.from({ length: 2 }).map((_, i) => (
+                    <div key={i} className="p-4 rounded-lg bg-secondary/50 flex items-center justify-between">
+                      <div className="space-y-2">
+                        <Skeleton className="h-5 w-32" />
+                        <Skeleton className="h-4 w-48" />
+                      </div>
+                      <Skeleton className="h-9 w-24" />
+                    </div>
+                  ))
+                ) : globalProviders.length > 0 ? (
+                  globalProviders.map((provider, index) => (
                     <AIProviderCard
                       key={provider.id}
                       provider={provider}
@@ -161,8 +206,8 @@ export default function AIHubPage() {
                       onToggle={handleToggleProvider}
                       onDelete={handleDeleteProvider}
                     />
-                  ))}
-                {globalProviders.length === 0 && (
+                  ))
+                ) : (
                   <p className="text-sm text-muted-foreground text-center py-8">
                     No global providers configured. Add one to get started.
                   </p>
@@ -197,7 +242,7 @@ export default function AIHubPage() {
           </TabsContent>
 
           <TabsContent value="models">
-            <ModelSelector models={mockAIModels} />
+            <ModelSelector models={models ?? []} isLoading={isLoadingModels} />
           </TabsContent>
 
           <TabsContent value="fallback">
@@ -256,7 +301,6 @@ export default function AIHubPage() {
                   <div className="flex items-center gap-2 flex-wrap">
                     {globalProviders
                       .filter((p) => p.isActive)
-                      .sort((a, b) => a.priority - b.priority)
                       .map((provider, index, arr) => (
                         <div key={provider.id} className="flex items-center gap-2">
                           <Badge
@@ -266,10 +310,13 @@ export default function AIHubPage() {
                             {provider.providerName}
                           </Badge>
                           {index < arr.length - 1 && (
-                            <span className="text-muted-foreground">→</span>
+                            <span className="text-muted-foreground">-&gt;</span>
                           )}
                         </div>
                       ))}
+                    {globalProviders.filter((p) => p.isActive).length === 0 && (
+                      <p className="text-sm text-muted-foreground">No active providers</p>
+                    )}
                   </div>
                 </div>
               </CardContent>
@@ -280,7 +327,6 @@ export default function AIHubPage() {
         <AddProviderDialog
           open={isAddDialogOpen}
           onOpenChange={setIsAddDialogOpen}
-          onAdd={handleAddProvider}
         />
       </div>
     </DashboardLayout>

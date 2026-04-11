@@ -5,17 +5,22 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Search, RefreshCw, Cpu, DollarSign, Database } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
+import { aiProviderKeys } from '@/hooks/use-ai-provider'
 import type { AIModel } from '@/lib/types'
 
 interface ModelSelectorProps {
   models: AIModel[]
+  isLoading?: boolean
 }
 
-export function ModelSelector({ models }: ModelSelectorProps) {
+export function ModelSelector({ models, isLoading = false }: ModelSelectorProps) {
   const [search, setSearch] = useState('')
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const queryClient = useQueryClient()
 
   const filteredModels = models.filter(
     (model) =>
@@ -25,8 +30,7 @@ export function ModelSelector({ models }: ModelSelectorProps) {
 
   const handleRefresh = async () => {
     setIsRefreshing(true)
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1500))
+    await queryClient.invalidateQueries({ queryKey: aiProviderKeys.allModels() })
     setIsRefreshing(false)
   }
 
@@ -121,11 +125,24 @@ export function ModelSelector({ models }: ModelSelectorProps) {
           ))}
         </div>
 
-        {filteredModels.length === 0 && (
+        {isLoading ? (
+          <div className="space-y-4">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="space-y-2">
+                <Skeleton className="h-4 w-24" />
+                <div className="space-y-2">
+                  {Array.from({ length: 2 }).map((_, j) => (
+                    <Skeleton key={j} className="h-16 w-full" />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : filteredModels.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
             No models found matching your search.
           </div>
-        )}
+        ) : null}
       </CardContent>
     </Card>
   )

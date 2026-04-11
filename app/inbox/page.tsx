@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { DashboardLayout } from '@/components/dashboard/dashboard-layout'
 import { MessageCard } from '@/components/inbox/message-card'
 import { ThoughtProcessPanel } from '@/components/inbox/thought-process-panel'
@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   Select,
   SelectContent,
@@ -18,72 +19,53 @@ import {
 } from '@/components/ui/select'
 import {
   Search,
-  Filter,
   Circle,
   ArrowDownUp,
   Inbox as InboxIcon,
   MessageSquare,
   Bot,
+  WifiOff,
+  RefreshCw,
 } from 'lucide-react'
-import { mockInboxMessages, mockClients } from '@/lib/mock-data'
+import { useRealtimeInbox, useInboxStats, useClients } from '@/hooks/use-inbox'
 import type { InboxMessage } from '@/lib/types'
 
 export default function InboxPage() {
-  const [messages, setMessages] = useState<InboxMessage[]>(mockInboxMessages)
   const [search, setSearch] = useState('')
   const [clientFilter, setClientFilter] = useState<string>('all')
   const [directionFilter, setDirectionFilter] = useState<string>('all')
   const [selectedMessage, setSelectedMessage] = useState<InboxMessage | null>(null)
-  const [isLive, setIsLive] = useState(true)
 
-  // Simulate live updates
-  useEffect(() => {
-    if (!isLive) return
+  // Build filters object
+  const filters = useMemo(
+    () => ({
+      clientId: clientFilter !== 'all' ? parseInt(clientFilter, 10) : undefined,
+      direction: directionFilter !== 'all' ? (directionFilter as 'inbound' | 'outbound') : undefined,
+      search: search || undefined,
+    }),
+    [clientFilter, directionFilter, search]
+  )
 
-    const interval = setInterval(() => {
-      const randomClient = mockClients[Math.floor(Math.random() * mockClients.length)]
-      const randomMessages = [
-        'Hi, I need help with my account',
-        'When will my order arrive?',
-        'Can you tell me more about your services?',
-        'I have a question about pricing',
-        'Thanks for your help!',
-      ]
-      const randomNumber = `+1${Math.floor(1000000000 + Math.random() * 9000000000)}`
+  // Fetch data with real-time updates
+  const { messages, isLoading, isLive, connectionError, reconnect } = useRealtimeInbox(filters)
+  const { data: stats } = useInboxStats()
+  const { data: clients } = useClients()
 
-      const newMessage: InboxMessage = {
-        id: `live-${Date.now()}`,
-        clientId: randomClient.id,
-        clientName: randomClient.name,
-        customerNumber: randomNumber,
-        message: randomMessages[Math.floor(Math.random() * randomMessages.length)],
-        direction: 'inbound',
-        timestamp: new Date(),
-        aiThoughtProcess: 'Analyzing customer intent... Detected inquiry type. Preparing contextual response.',
-        modelUsed: 'gpt-4-turbo',
-      }
-
-      setMessages((prev) => [newMessage, ...prev.slice(0, 49)])
-    }, 8000)
-
-    return () => clearInterval(interval)
-  }, [isLive])
-
-  const filteredMessages = messages.filter((message) => {
-    const matchesSearch =
-      message.message.toLowerCase().includes(search.toLowerCase()) ||
-      message.customerNumber.includes(search) ||
-      message.clientName.toLowerCase().includes(search.toLowerCase())
-    const matchesClient =
-      clientFilter === 'all' || message.clientId.toString() === clientFilter
-    const matchesDirection =
-      directionFilter === 'all' || message.direction === directionFilter
-    return matchesSearch && matchesClient && matchesDirection
-  })
-
-  const inboundCount = messages.filter((m) => m.direction === 'inbound').length
-  const outboundCount = messages.filter((m) => m.direction === 'outbound').length
-  const withAiCount = messages.filter((m) => m.aiThoughtProcess).length
+  // Filter messages client-side for immediate feedback
+  const filteredMessages = useMemo(() => {
+    return messages.filter((message) => {
+      const matchesSearch =
+        !search ||
+        message.message.toLowerCase().includes(search.toLowerCase()) ||
+        message.customerNumber.includes(search) ||
+        message.clientName.toLowerCase().includes(search.toLowerCase())
+      const matchesClient =
+        clientFilter === 'all' || message.clientId.toString() === clientFilter
+      const matchesDirection =
+        directionFilter === 'all' || message.direction === directionFilter
+      return matchesSearch && matchesClient && matchesDirection
+    })
+  }, [messages, search, clientFilter, directionFilter])
 
   return (
     <DashboardLayout
@@ -100,7 +82,7 @@ export default function InboxPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-xs text-muted-foreground">Total</p>
-                    <p className="text-xl font-bold">{messages.length}</p>
+                    <p className="text-xl font-bold">{stats?.total ?? messages.length}</p>
                   </div>
                   <InboxIcon className="w-5 h-5 text-muted-foreground" />
                 </div>
@@ -111,7 +93,9 @@ export default function InboxPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-xs text-muted-foreground">Inbound</p>
-                    <p className="text-xl font-bold text-info">{inboundCount}</p>
+                    <p className="text-xl font-bold text-info">
+                      {stats?.inbound ?? messages.filter((m) => m.direction === 'inbound').length}
+                    </p>
                   </div>
                   <ArrowDownUp className="w-5 h-5 text-info" />
                 </div>
@@ -122,7 +106,9 @@ export default function InboxPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-xs text-muted-foreground">Outbound</p>
-                    <p className="text-xl font-bold text-primary">{outboundCount}</p>
+                    <p className="text-xl font-bold text-primary">
+                      {stats?.outbound ?? messages.filter((m) => m.direction === 'outbound').length}
+                    </p>
                   </div>
                   <MessageSquare className="w-5 h-5 text-primary" />
                 </div>
@@ -133,7 +119,9 @@ export default function InboxPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-xs text-muted-foreground">AI Processed</p>
-                    <p className="text-xl font-bold text-accent">{withAiCount}</p>
+                    <p className="text-xl font-bold text-accent">
+                      {stats?.aiProcessed ?? messages.filter((m) => m.aiThoughtProcess).length}
+                    </p>
                   </div>
                   <Bot className="w-5 h-5 text-accent" />
                 </div>
@@ -160,7 +148,7 @@ export default function InboxPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Clients</SelectItem>
-                    {mockClients.map((client) => (
+                    {clients?.map((client) => (
                       <SelectItem key={client.id} value={client.id.toString()}>
                         {client.name}
                       </SelectItem>
@@ -177,16 +165,29 @@ export default function InboxPage() {
                     <SelectItem value="outbound">Outbound</SelectItem>
                   </SelectContent>
                 </Select>
-                <Button
-                  variant={isLive ? 'default' : 'outline'}
-                  onClick={() => setIsLive(!isLive)}
-                  className={isLive ? 'bg-primary text-primary-foreground' : ''}
-                >
-                  <Circle
-                    className={`w-2 h-2 mr-2 ${isLive ? 'fill-primary-foreground animate-pulse' : ''}`}
-                  />
-                  {isLive ? 'Live' : 'Paused'}
-                </Button>
+                
+                {/* Live Status Indicator */}
+                {isLive ? (
+                  <Badge variant="outline" className="bg-success/10 border-success text-success flex items-center gap-2 px-3">
+                    <Circle className="w-2 h-2 fill-success animate-pulse" />
+                    Live
+                  </Badge>
+                ) : connectionError ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={reconnect}
+                    className="border-error text-error hover:bg-error/10"
+                  >
+                    <WifiOff className="w-4 h-4 mr-2" />
+                    Reconnect
+                  </Button>
+                ) : (
+                  <Badge variant="outline" className="bg-muted text-muted-foreground flex items-center gap-2 px-3">
+                    <RefreshCw className="w-3 h-3 animate-spin" />
+                    Connecting...
+                  </Badge>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -203,18 +204,34 @@ export default function InboxPage() {
             </CardHeader>
             <ScrollArea className="h-[calc(100%-3.5rem)]">
               <div className="p-4 space-y-2">
-                {filteredMessages.map((message) => (
-                  <MessageCard
-                    key={message.id}
-                    message={message}
-                    isSelected={selectedMessage?.id === message.id}
-                    onClick={() => setSelectedMessage(message)}
-                  />
-                ))}
-                {filteredMessages.length === 0 && (
+                {isLoading ? (
+                  // Loading skeletons
+                  Array.from({ length: 5 }).map((_, i) => (
+                    <div key={i} className="p-4 rounded-lg bg-secondary/50 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Skeleton className="h-4 w-32" />
+                        <Skeleton className="h-3 w-20" />
+                      </div>
+                      <Skeleton className="h-4 w-full" />
+                      <Skeleton className="h-4 w-3/4" />
+                    </div>
+                  ))
+                ) : filteredMessages.length > 0 ? (
+                  filteredMessages.map((message) => (
+                    <MessageCard
+                      key={message.id}
+                      message={message}
+                      isSelected={selectedMessage?.id === message.id}
+                      onClick={() => setSelectedMessage(message)}
+                    />
+                  ))
+                ) : (
                   <div className="text-center py-12 text-muted-foreground">
                     <InboxIcon className="w-12 h-12 mx-auto mb-4 opacity-50" />
                     <p>No messages found</p>
+                    {(search || clientFilter !== 'all' || directionFilter !== 'all') && (
+                      <p className="text-sm mt-2">Try adjusting your filters</p>
+                    )}
                   </div>
                 )}
               </div>

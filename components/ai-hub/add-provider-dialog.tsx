@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
 import {
   Dialog,
   DialogContent,
@@ -20,7 +21,10 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import type { AIProvider } from '@/lib/types'
+import { aiProviderSchema, type AIProviderFormData } from '@/lib/validations'
+import { useCreateAIProvider } from '@/hooks/use-ai-provider'
+import { toast } from 'sonner'
+import { Loader2 } from 'lucide-react'
 
 const PROVIDER_PRESETS = [
   { name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1' },
@@ -35,53 +39,63 @@ const PROVIDER_PRESETS = [
 interface AddProviderDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onAdd: (provider: Omit<AIProvider, 'id' | 'updatedAt'>) => void
 }
 
 export function AddProviderDialog({
   open,
   onOpenChange,
-  onAdd,
 }: AddProviderDialogProps) {
-  const [providerName, setProviderName] = useState('')
-  const [apiKey, setApiKey] = useState('')
-  const [baseUrl, setBaseUrl] = useState('')
-  const [priority, setPriority] = useState('1')
-  const [isGlobal, setIsGlobal] = useState(true)
-  const [clientId, setClientId] = useState('')
+  const createProvider = useCreateAIProvider()
+
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    watch,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm<AIProviderFormData>({
+    resolver: zodResolver(aiProviderSchema),
+    defaultValues: {
+      providerName: '',
+      apiKey: '',
+      baseUrl: null,
+      priority: 1,
+      isActive: true,
+      clientId: null,
+    },
+  })
+
+  const isGlobal = watch('clientId') === null
+  const providerName = watch('providerName')
 
   const handleProviderSelect = (name: string) => {
-    setProviderName(name)
+    setValue('providerName', name === 'Custom' ? 'Custom Provider' : name)
     const preset = PROVIDER_PRESETS.find((p) => p.name === name)
-    if (preset) {
-      setBaseUrl(preset.baseUrl)
+    if (preset && preset.baseUrl) {
+      setValue('baseUrl', preset.baseUrl)
     }
   }
 
-  const handleSubmit = () => {
-    onAdd({
-      providerName: providerName === 'Custom' ? 'Custom Provider' : providerName,
-      apiKey,
-      baseUrl: baseUrl || null,
-      priority: parseInt(priority, 10),
-      isActive: true,
-      lastError: null,
-      clientId: isGlobal ? null : parseInt(clientId, 10),
-    })
-
-    // Reset form
-    setProviderName('')
-    setApiKey('')
-    setBaseUrl('')
-    setPriority('1')
-    setIsGlobal(true)
-    setClientId('')
+  const onSubmit = async (data: AIProviderFormData) => {
+    try {
+      await createProvider.mutateAsync(data)
+      toast.success('AI Provider added successfully')
+      reset()
+      onOpenChange(false)
+    } catch (error) {
+      toast.error('Failed to add AI provider')
+      console.error('Create provider error:', error)
+    }
   }
 
-  const isValid = providerName && apiKey && priority
+  const handleClose = () => {
+    reset()
+    onOpenChange(false)
+  }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-[500px] bg-card border-border">
         <DialogHeader>
           <DialogTitle>Add AI Provider</DialogTitle>
@@ -90,10 +104,13 @@ export function AddProviderDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 py-4">
           <div className="space-y-2">
             <Label>Provider</Label>
-            <Select value={providerName} onValueChange={handleProviderSelect}>
+            <Select
+              value={PROVIDER_PRESETS.some((p) => p.name === providerName) ? providerName : 'Custom'}
+              onValueChange={handleProviderSelect}
+            >
               <SelectTrigger className="bg-secondary border-border">
                 <SelectValue placeholder="Select a provider" />
               </SelectTrigger>
@@ -105,39 +122,51 @@ export function AddProviderDialog({
                 ))}
               </SelectContent>
             </Select>
+            {errors.providerName && (
+              <p className="text-xs text-error">{errors.providerName.message}</p>
+            )}
           </div>
 
           <div className="space-y-2">
-            <Label>API Key</Label>
+            <Label htmlFor="apiKey">API Key</Label>
             <Input
+              id="apiKey"
               type="password"
               placeholder="sk-..."
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
+              {...register('apiKey')}
               className="bg-secondary border-border font-mono"
             />
+            {errors.apiKey && (
+              <p className="text-xs text-error">{errors.apiKey.message}</p>
+            )}
           </div>
 
           <div className="space-y-2">
-            <Label>Base URL</Label>
+            <Label htmlFor="baseUrl">Base URL</Label>
             <Input
+              id="baseUrl"
               placeholder="https://api.example.com/v1"
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
+              {...register('baseUrl')}
               className="bg-secondary border-border"
             />
+            {errors.baseUrl && (
+              <p className="text-xs text-error">{errors.baseUrl.message}</p>
+            )}
           </div>
 
           <div className="space-y-2">
-            <Label>Priority (1 = highest)</Label>
+            <Label htmlFor="priority">Priority (1 = highest)</Label>
             <Input
+              id="priority"
               type="number"
               min="1"
               max="10"
-              value={priority}
-              onChange={(e) => setPriority(e.target.value)}
+              {...register('priority', { valueAsNumber: true })}
               className="bg-secondary border-border w-24"
             />
+            {errors.priority && (
+              <p className="text-xs text-error">{errors.priority.message}</p>
+            )}
           </div>
 
           <div className="flex items-center justify-between p-3 rounded-lg bg-secondary/50">
@@ -147,35 +176,43 @@ export function AddProviderDialog({
                 Available to all tenants
               </p>
             </div>
-            <Switch checked={isGlobal} onCheckedChange={setIsGlobal} />
+            <Switch
+              checked={isGlobal}
+              onCheckedChange={(checked) =>
+                setValue('clientId', checked ? null : undefined)
+              }
+            />
           </div>
 
           {!isGlobal && (
             <div className="space-y-2">
-              <Label>Client ID</Label>
+              <Label htmlFor="clientId">Client ID</Label>
               <Input
+                id="clientId"
                 type="number"
                 placeholder="1"
-                value={clientId}
-                onChange={(e) => setClientId(e.target.value)}
+                {...register('clientId', { valueAsNumber: true })}
                 className="bg-secondary border-border w-32"
               />
             </div>
           )}
-        </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSubmit}
-            disabled={!isValid}
-            className="bg-primary text-primary-foreground"
-          >
-            Add Provider
-          </Button>
-        </DialogFooter>
+          <DialogFooter className="pt-4">
+            <Button type="button" variant="outline" onClick={handleClose}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={isSubmitting || createProvider.isPending}
+              className="bg-primary text-primary-foreground"
+            >
+              {(isSubmitting || createProvider.isPending) && (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              )}
+              Add Provider
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   )

@@ -30,7 +30,7 @@ interface WhatsAppInstanceCardProps {
   clientName: string
   onScanQR: (instance: WhatsAppInstance) => void
   onDelete: (id: number) => void
-  onDisconnect: (id: number) => void
+  onDisconnect: () => void
 }
 
 const statusConfig = {
@@ -141,7 +141,7 @@ export function WhatsAppInstanceCard({
         <Button
           size="sm"
           variant="outline"
-          onClick={() => onDisconnect(instance.id)}
+          onClick={onDisconnect}
           className="text-warning border-warning/30 hover:bg-warning/10"
         >
           <Unplug className="w-4 h-4 mr-2" />

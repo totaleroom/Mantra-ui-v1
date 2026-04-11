@@ -1,8 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
+import { useForm, Controller } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
 import { DashboardLayout } from '@/components/dashboard/dashboard-layout'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -12,6 +14,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Select,
@@ -30,30 +33,132 @@ import {
   RotateCcw,
   Zap,
   MessageSquare,
+  Loader2,
 } from 'lucide-react'
-import {
-  mockClients,
-  mockClientAIConfigs,
-  mockAIModels,
-  mockWhatsAppInstances,
-} from '@/lib/mock-data'
+import { useTenant, useTenantAIConfig, useUpdateTenant, useUpdateTenantAIConfig } from '@/hooks/use-tenant'
+import { useWhatsAppInstances } from '@/hooks/use-whatsapp'
+import { useAllModels } from '@/hooks/use-ai-provider'
+import { clientAiConfigSchema, type ClientAIConfigFormData } from '@/lib/validations'
+import { toast } from 'sonner'
 
 export default function TenantDetailPage() {
   const params = useParams()
   const clientId = parseInt(params.id as string, 10)
 
-  const client = mockClients.find((c) => c.id === clientId)
-  const existingConfig = mockClientAIConfigs.find((c) => c.clientId === clientId)
-  const instances = mockWhatsAppInstances.filter((i) => i.clientId === clientId)
+  // Fetch data
+  const { data: client, isLoading: isLoadingClient } = useTenant(clientId)
+  const { data: existingConfig, isLoading: isLoadingConfig } = useTenantAIConfig(clientId)
+  const { data: instances } = useWhatsAppInstances()
+  const { data: models } = useAllModels()
 
-  const [config, setConfig] = useState({
-    modelId: existingConfig?.modelId || 'gpt-4-turbo',
-    systemPrompt: existingConfig?.systemPrompt || '',
-    vectorNamespace: existingConfig?.vectorNamespace || '',
-    temperature: existingConfig?.temperature || 0.7,
-    memoryTtlDays: existingConfig?.memoryTtlDays || 4,
-    memoryEnabled: true,
+  // Mutations
+  const updateTenant = useUpdateTenant()
+  const updateConfig = useUpdateTenantAIConfig()
+
+  // Form
+  const {
+    register,
+    handleSubmit,
+    control,
+    watch,
+    reset,
+    formState: { errors, isDirty, isSubmitting },
+  } = useForm<Omit<ClientAIConfigFormData, 'clientId'> & { memoryEnabled: boolean; tokenLimit: number }>({
+    resolver: zodResolver(
+      clientAiConfigSchema.omit({ clientId: true }).extend({
+        memoryEnabled: clientAiConfigSchema.shape.memoryTtlDays.transform(() => true),
+        tokenLimit: clientAiConfigSchema.shape.memoryTtlDays,
+      })
+    ),
+    defaultValues: {
+      modelId: '',
+      systemPrompt: '',
+      vectorNamespace: '',
+      temperature: 0.7,
+      memoryTtlDays: 4,
+      memoryEnabled: true,
+      tokenLimit: 1000,
+    },
   })
+
+  // Sync form with fetched data
+  useEffect(() => {
+    if (existingConfig && client) {
+      reset({
+        modelId: existingConfig.modelId,
+        systemPrompt: existingConfig.systemPrompt,
+        vectorNamespace: existingConfig.vectorNamespace || '',
+        temperature: existingConfig.temperature,
+        memoryTtlDays: existingConfig.memoryTtlDays,
+        memoryEnabled: existingConfig.memoryTtlDays > 0,
+        tokenLimit: client.tokenLimit,
+      })
+    }
+  }, [existingConfig, client, reset])
+
+  const memoryEnabled = watch('memoryEnabled')
+  const temperature = watch('temperature')
+  const memoryTtlDays = watch('memoryTtlDays')
+
+  const clientInstances = instances?.filter((i) => i.clientId === clientId) ?? []
+
+  const onSubmit = async (data: Omit<ClientAIConfigFormData, 'clientId'> & { memoryEnabled: boolean; tokenLimit: number }) => {
+    try {
+      // Update AI config
+      await updateConfig.mutateAsync({
+        clientId,
+        data: {
+          modelId: data.modelId,
+          systemPrompt: data.systemPrompt,
+          vectorNamespace: data.vectorNamespace || null,
+          temperature: data.temperature,
+          memoryTtlDays: data.memoryEnabled ? data.memoryTtlDays : 0,
+        },
+      })
+
+      // Update token limit if changed
+      if (client && data.tokenLimit !== client.tokenLimit) {
+        await updateTenant.mutateAsync({
+          id: clientId,
+          data: { tokenLimit: data.tokenLimit },
+        })
+      }
+
+      toast.success('Configuration saved successfully')
+    } catch {
+      toast.error('Failed to save configuration')
+    }
+  }
+
+  const handleReset = () => {
+    if (existingConfig && client) {
+      reset({
+        modelId: existingConfig.modelId,
+        systemPrompt: existingConfig.systemPrompt,
+        vectorNamespace: existingConfig.vectorNamespace || '',
+        temperature: existingConfig.temperature,
+        memoryTtlDays: existingConfig.memoryTtlDays,
+        memoryEnabled: existingConfig.memoryTtlDays > 0,
+        tokenLimit: client.tokenLimit,
+      })
+    }
+  }
+
+  if (isLoadingClient || isLoadingConfig) {
+    return (
+      <DashboardLayout title="Loading..." description="">
+        <div className="space-y-6">
+          <Skeleton className="h-10 w-48" />
+          <div className="grid gap-4 md:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-28" />
+            ))}
+          </div>
+          <Skeleton className="h-96" />
+        </div>
+      </DashboardLayout>
+    )
+  }
 
   if (!client) {
     return (
@@ -76,21 +181,22 @@ export default function TenantDetailPage() {
       title={client.name}
       description="Tenant AI configuration and settings"
     >
-      <div className="space-y-6">
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <Link href="/tenants">
-            <Button variant="ghost" size="sm">
+            <Button type="button" variant="ghost" size="sm">
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back to Tenants
             </Button>
           </Link>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm">
+            <Button type="button" variant="outline" size="sm" onClick={handleReset} disabled={!isDirty}>
               <RotateCcw className="w-4 h-4 mr-2" />
               Reset
             </Button>
-            <Button size="sm" className="bg-primary text-primary-foreground">
+            <Button type="submit" size="sm" className="bg-primary text-primary-foreground" disabled={isSubmitting}>
+              {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               <Save className="w-4 h-4 mr-2" />
               Save Changes
             </Button>
@@ -139,12 +245,12 @@ export default function TenantDetailPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">WA Instances</p>
-                  <p className="text-2xl font-bold">{instances.length}</p>
+                  <p className="text-2xl font-bold">{clientInstances.length}</p>
                 </div>
                 <MessageSquare className="w-5 h-5 text-info" />
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                {instances.filter((i) => i.status === 'CONNECTED').length} connected
+                {clientInstances.filter((i) => i.status === 'CONNECTED').length} connected
               </p>
             </CardContent>
           </Card>
@@ -154,7 +260,7 @@ export default function TenantDetailPage() {
                 <div>
                   <p className="text-sm text-muted-foreground">Created</p>
                   <p className="text-sm font-medium mt-1">
-                    {client.createdAt.toLocaleDateString('en-US', {
+                    {new Date(client.createdAt).toLocaleDateString('en-US', {
                       month: 'short',
                       day: 'numeric',
                       year: 'numeric',
@@ -190,41 +296,46 @@ export default function TenantDetailPage() {
                 {/* Model Selection */}
                 <div className="space-y-2">
                   <Label>AI Model</Label>
-                  <Select
-                    value={config.modelId}
-                    onValueChange={(value) =>
-                      setConfig({ ...config, modelId: value })
-                    }
-                  >
-                    <SelectTrigger className="bg-secondary border-border">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {mockAIModels.map((model) => (
-                        <SelectItem key={model.id} value={model.id}>
-                          <div className="flex items-center gap-2">
-                            <span>{model.name}</span>
-                            <span className="text-xs text-muted-foreground">
-                              ({model.provider})
-                            </span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Controller
+                    name="modelId"
+                    control={control}
+                    render={({ field }) => (
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <SelectTrigger className="bg-secondary border-border">
+                          <SelectValue placeholder="Select a model" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {models?.map((model) => (
+                            <SelectItem key={model.id} value={model.id}>
+                              <div className="flex items-center gap-2">
+                                <span>{model.name}</span>
+                                <span className="text-xs text-muted-foreground">
+                                  ({model.provider})
+                                </span>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                  {errors.modelId && (
+                    <p className="text-xs text-error">{errors.modelId.message}</p>
+                  )}
                 </div>
 
                 {/* System Prompt */}
                 <div className="space-y-2">
-                  <Label>System Prompt</Label>
+                  <Label htmlFor="systemPrompt">System Prompt</Label>
                   <Textarea
+                    id="systemPrompt"
                     placeholder="You are a helpful customer service agent for..."
-                    value={config.systemPrompt}
-                    onChange={(e) =>
-                      setConfig({ ...config, systemPrompt: e.target.value })
-                    }
+                    {...register('systemPrompt')}
                     className="bg-secondary border-border min-h-[150px] font-mono text-sm"
                   />
+                  {errors.systemPrompt && (
+                    <p className="text-xs text-error">{errors.systemPrompt.message}</p>
+                  )}
                   <p className="text-xs text-muted-foreground">
                     Define the AI persona, tone, and behavioral guidelines
                   </p>
@@ -238,22 +349,26 @@ export default function TenantDetailPage() {
                       Temperature
                     </Label>
                     <Badge variant="outline" className="bg-secondary font-mono">
-                      {config.temperature}
+                      {temperature}
                     </Badge>
                   </div>
-                  <Slider
-                    value={[config.temperature as number]}
-                    onValueChange={([value]) =>
-                      setConfig({ ...config, temperature: value })
-                    }
-                    min={0}
-                    max={1}
-                    step={0.1}
-                    className="w-full"
+                  <Controller
+                    name="temperature"
+                    control={control}
+                    render={({ field }) => (
+                      <Slider
+                        value={[field.value]}
+                        onValueChange={([value]) => field.onChange(value)}
+                        min={0}
+                        max={2}
+                        step={0.1}
+                        className="w-full"
+                      />
+                    )}
                   />
                   <div className="flex justify-between text-xs text-muted-foreground">
                     <span>Precise (0.0)</span>
-                    <span>Creative (1.0)</span>
+                    <span>Creative (2.0)</span>
                   </div>
                 </div>
               </CardContent>
@@ -273,13 +388,11 @@ export default function TenantDetailPage() {
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="space-y-2">
-                  <Label>Vector Namespace</Label>
+                  <Label htmlFor="vectorNamespace">Vector Namespace</Label>
                   <Input
+                    id="vectorNamespace"
                     placeholder="e.g., acme-kb"
-                    value={config.vectorNamespace}
-                    onChange={(e) =>
-                      setConfig({ ...config, vectorNamespace: e.target.value })
-                    }
+                    {...register('vectorNamespace')}
                     className="bg-secondary border-border font-mono"
                   />
                   <p className="text-xs text-muted-foreground">
@@ -292,7 +405,7 @@ export default function TenantDetailPage() {
                   <p className="text-xs text-muted-foreground mb-4">
                     Upload PDFs, text files, or other documents to build the knowledge base
                   </p>
-                  <Button variant="outline" size="sm">
+                  <Button type="button" variant="outline" size="sm">
                     Upload Files
                   </Button>
                 </div>
@@ -320,32 +433,37 @@ export default function TenantDetailPage() {
                       Remember customer context across conversations
                     </p>
                   </div>
-                  <Switch
-                    checked={config.memoryEnabled}
-                    onCheckedChange={(checked) =>
-                      setConfig({ ...config, memoryEnabled: checked })
-                    }
+                  <Controller
+                    name="memoryEnabled"
+                    control={control}
+                    render={({ field }) => (
+                      <Switch checked={field.value} onCheckedChange={field.onChange} />
+                    )}
                   />
                 </div>
 
                 {/* TTL Slider */}
-                {config.memoryEnabled && (
+                {memoryEnabled && (
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <Label>Memory TTL (Time to Live)</Label>
                       <Badge variant="outline" className="bg-secondary font-mono">
-                        {config.memoryTtlDays} days
+                        {memoryTtlDays} days
                       </Badge>
                     </div>
-                    <Slider
-                      value={[config.memoryTtlDays]}
-                      onValueChange={([value]) =>
-                        setConfig({ ...config, memoryTtlDays: value })
-                      }
-                      min={1}
-                      max={4}
-                      step={1}
-                      className="w-full"
+                    <Controller
+                      name="memoryTtlDays"
+                      control={control}
+                      render={({ field }) => (
+                        <Slider
+                          value={[field.value]}
+                          onValueChange={([value]) => field.onChange(value)}
+                          min={1}
+                          max={4}
+                          step={1}
+                          className="w-full"
+                        />
+                      )}
                     />
                     <div className="flex justify-between text-xs text-muted-foreground">
                       <span>1 day</span>
@@ -384,10 +502,11 @@ export default function TenantDetailPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>Token Limit</Label>
+                    <Label htmlFor="tokenLimit">Token Limit</Label>
                     <Input
+                      id="tokenLimit"
                       type="number"
-                      defaultValue={client.tokenLimit}
+                      {...register('tokenLimit', { valueAsNumber: true })}
                       className="bg-secondary border-border font-mono"
                     />
                   </div>
@@ -399,7 +518,7 @@ export default function TenantDetailPage() {
                     <div
                       className="h-full bg-primary transition-all"
                       style={{
-                        width: `${(client.tokenBalance / client.tokenLimit) * 100}%`,
+                        width: `${Math.min((client.tokenBalance / client.tokenLimit) * 100, 100)}%`,
                       }}
                     />
                   </div>
@@ -419,7 +538,7 @@ export default function TenantDetailPage() {
             </Card>
           </TabsContent>
         </Tabs>
-      </div>
+      </form>
     </DashboardLayout>
   )
 }
