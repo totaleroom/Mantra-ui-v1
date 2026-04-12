@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"mantra-backend/config"
 	"mantra-backend/database"
@@ -48,6 +49,8 @@ func main() {
 		AllowCredentials: true,
 	}))
 
+	app.Get("/health", healthCheck)
+
 	routes.Setup(app)
 
 	quit := make(chan os.Signal, 1)
@@ -56,7 +59,7 @@ func main() {
 	go func() {
 		port := config.C.Port
 		log.Printf("[Server] Mantra AI Backend starting on :%s", port)
-		if err := app.Listen(":" + port); err != nil {
+		if err := app.Listen("0.0.0.0:" + port); err != nil {
 			log.Fatalf("[Server] Failed to start: %v", err)
 		}
 	}()
@@ -71,6 +74,51 @@ func main() {
 		database.Redis.Close()
 	}
 	log.Println("[Server] Shutdown complete")
+}
+
+func healthCheck(c *fiber.Ctx) error {
+	dbOK := false
+	redisOK := false
+	dbLatency := 0
+	redisLatency := 0
+
+	if database.DB != nil {
+		if sqlDB, err := database.DB.DB(); err == nil {
+			if err := sqlDB.Ping(); err == nil {
+				dbOK = true
+			}
+		}
+	}
+
+	if database.Redis != nil {
+		ctx := context.Background()
+		if err := database.Redis.Ping(ctx).Err(); err == nil {
+			redisOK = true
+		}
+	}
+
+	body := fiber.Map{
+		"service": "mantra-backend",
+		"db":      statusLabel(dbOK),
+		"redis":   statusLabel(redisOK),
+		"dbLatencyMs":    dbLatency,
+		"redisLatencyMs": redisLatency,
+	}
+
+	if dbOK && redisOK {
+		body["status"] = "ok"
+		return c.Status(fiber.StatusOK).JSON(body)
+	}
+
+	body["status"] = "degraded"
+	return c.Status(fiber.StatusServiceUnavailable).JSON(body)
+}
+
+func statusLabel(ok bool) string {
+	if ok {
+		return "connected"
+	}
+	return "unavailable"
 }
 
 func errorHandler(c *fiber.Ctx, err error) error {
