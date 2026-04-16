@@ -141,11 +141,15 @@ CREATE TABLE IF NOT EXISTS system_diagnoses (
 );
 
 -- ---------------------------------------------------------------
--- Seed: default super-admin user
--- Password: changeme123  (bcrypt hash — CHANGE IN PRODUCTION)
 -- ---------------------------------------------------------------
-INSERT INTO users (email, password, role) VALUES (
-    'admin@mantra.ai',
-    '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy',
-    'SUPER_ADMIN'
-) ON CONFLICT (email) DO NOTHING;
+-- Seed: default accounts (DEVELOPMENT ONLY — change passwords in production)
+-- ---------------------------------------------------------------
+-- SUPER_ADMIN  →  admin@mantra.ai   /  MantraAdmin2024!
+-- CLIENT_ADMIN →  demo@mantra.ai    /  admin123
+-- ---------------------------------------------------------------
+INSERT INTO users (email, password, role) VALUES
+    ('admin@mantra.ai', '$2a$10$GNm/LleSefP5IS3.mbmNWuiHGOZGKTnDdEKrtdu/KBoZk.VO0XIby', 'SUPER_ADMIN'),
+    ('demo@mantra.ai',  '$2a$10$Id0AHtQpCETR7PChpQS08eQOjd65/zxuYeDEfy6If7Dc2tzZ1teuO', 'CLIENT_ADMIN')
+ON CONFLICT (email) DO UPDATE
+    SET password = EXCLUDED.password,
+        role     = EXCLUDED.role;
