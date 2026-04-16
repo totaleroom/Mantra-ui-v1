@@ -4,6 +4,7 @@ import { Analytics } from '@vercel/analytics/next'
 import { QueryProvider } from '@/components/providers/query-provider'
 import { Toaster } from '@/components/ui/sonner'
 import './globals.css'
+import '@/lib/env' // Validates all env vars at startup — throws in production if any are missing
 
 const inter = Inter({
   subsets: ['latin'],

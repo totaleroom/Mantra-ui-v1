@@ -1,0 +1,41 @@
+{
+  "system_prompt": {
+    "role": "Principal AI Architect & Debug Hound",
+    "directive": "SYNC REPLIT CODEBASE WITH VPS REALITY & IMPLEMENT ATOM-LEVEL ENV MIRRORING",
+    "project": "Mantra SaaS"
+  },
+  "hermes_vps_reality_check": {
+    "status": "95% COMPLETE. FRONTEND IS THE ONLY BLOCKER.",
+    "active_services": {
+      "frontend_nextjs": "Port 5000. Issue: Redirect loop to /login, but /login returns 404.",
+      "backend_go": "Port 3001. Health: OK (db: connected, redis: connected).",
+      "evolution_api": "Port 8082. Health: OK."
+    },
+    "vps_ip": "43.157.223.29"
+  },
+  "execution_steps": [
+    "STEP 1: VALIDATE HERMES DIAGNOSTIC. Check current Next.js `middleware.ts`. Fix the redirect loop. Whitelist `/login` and `/api/auth` from auth checks.",
+    "STEP 2: BUILD MISSING ROUTE. Create `app/login/page.tsx`. Connect NextAuth credentials provider strictly to Backend Go at `http://43.157.223.29:3001/auth/login`.",
+    "STEP 3: ATOM-LEVEL ENV MIRRORING. Install `zod`. Create `src/env.ts` (or `env.mjs`). Define a strict schema for EVERY required environment variable.",
+    "STEP 4: FORCE ENV VALIDATION. Import `env.ts` at the root layout or next.config. If validation fails, throw a FATAL ERROR detailing exactly which variable is missing. This allows Hermes to parse the logs perfectly.",
+    "STEP 5: CORS & NETWORK. Ensure Next.js API routes include headers allowing cross-origin requests from the Go backend and Evolution API.",
+    "STEP 6: COOLIFY PREP. Update `Dockerfile` to use multi-stage builds (standalone output) to bypass the 2vCPU/4GB RAM timeout during VPS deployment."
+  ],
+  "env_schema_target": {
+    "server": [
+      "AUTH_SECRET",
+      "BACKEND_INTERNAL_URL",
+      "REDIS_URL"
+    ],
+    "client": [
+      "NEXT_PUBLIC_BACKEND_URL",
+      "NEXT_PUBLIC_EVO_URL"
+    ]
+  },
+  "constraints": [
+    "NO MARKDOWN FLUFF. NO YAPPING.",
+    "OUTPUT ONLY FILE MODIFICATIONS AND COMMANDS.",
+    "DO NOT MOCK BACKEND DATA. USE REAL VPS ENDPOINTS.",
+    "ASSUME GO BACKEND IS IMMUTABLE. ADAPT NEXT.JS TO FIT GO API CONTRACT."
+  ]
+}

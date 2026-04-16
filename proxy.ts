@@ -7,9 +7,11 @@ const SESSION_COOKIE = 'mantra_session'
 const SUPER_ADMIN_ONLY = ['/diagnosis', '/settings']
 const AUTH_REQUIRED = ['/', '/ai-hub', '/whatsapp', '/inbox', '/tenants', '/diagnosis', '/settings']
 
+// Public paths — always pass through, no auth check
+const PUBLIC_PATHS = ['/login', '/api/auth']
+
 function getJwtSecret(): Uint8Array {
-  const secret = process.env.JWT_SECRET || ''
-  return new TextEncoder().encode(secret)
+  return new TextEncoder().encode(process.env.JWT_SECRET || '')
 }
 
 interface SessionPayload {
@@ -42,14 +44,15 @@ function simpleDecodePayload(token: string): SessionPayload | null {
   }
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
+  // Always pass through: static assets, Next.js internals, public paths
   if (
     pathname.startsWith('/_next') ||
-    pathname.startsWith('/api/auth') ||
+    pathname.startsWith('/favicon') ||
     pathname.includes('.') ||
-    pathname === '/login'
+    PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'))
   ) {
     return addSecurityHeaders(NextResponse.next())
   }
@@ -98,19 +101,14 @@ export async function middleware(request: NextRequest) {
 
   const response = NextResponse.next()
   if (payload.role) response.headers.set('x-user-role', payload.role)
-  if (payload.userId) response.headers.set('x-user-id', payload.userId)
+  if (payload.userId) response.headers.set('x-user-id', String(payload.userId))
   return addSecurityHeaders(response)
 }
 
 function addSecurityHeaders(response: NextResponse): NextResponse {
-  response.headers.set('X-XSS-Protection', '1; mode=block')
   response.headers.set('X-Content-Type-Options', 'nosniff')
-  response.headers.set('X-Frame-Options', 'DENY')
+  response.headers.set('X-Frame-Options', 'SAMEORIGIN')
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
-  response.headers.set(
-    'Content-Security-Policy',
-    "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' wss: ws: https:;"
-  )
   return response
 }
 

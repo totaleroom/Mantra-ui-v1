@@ -52,7 +52,12 @@ export interface LoginResult {
 }
 
 export async function callLoginAPI(email: string, password: string): Promise<LoginResult> {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
+  // Prefer BACKEND_INTERNAL_URL for server-to-server calls (docker network / VPS internal)
+  // Fall back to NEXT_PUBLIC_API_URL for dev environments
+  const apiUrl =
+    process.env.BACKEND_INTERNAL_URL ||
+    process.env.NEXT_PUBLIC_API_URL ||
+    'http://localhost:3001'
 
   let res: Response
   try {
