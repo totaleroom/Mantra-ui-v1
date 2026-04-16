@@ -43,6 +43,7 @@ export async function getServerSession(): Promise<MantraSession | null> {
 export interface LoginResult {
   ok: boolean
   error?: string
+  token?: string
   user?: {
     id: string
     email: string
@@ -73,6 +74,7 @@ export async function callLoginAPI(email: string, password: string): Promise<Log
 
   return {
     ok: true,
+    token: data.token,
     user: data.user,
   }
 }
