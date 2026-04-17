@@ -19,8 +19,16 @@ Everything you need is in this repo. No hidden context.
 
 ## 📚 Reading order (triage first, don't dump everything)
 
+> **⚠️ Start here first:** [`.agent/README.md`](./.agent/README.md) — a
+> purpose-built skill pack with mission, architecture mental model, codebase
+> map, conventions, runbooks, gotchas, verification rituals, and an
+> append-only task log from previous agents. Read `.agent/` end-to-end
+> before touching anything else. It supersedes the older brief below for
+> code-level work.
+
 | Priority | File | When to read |
 |:-:|------|--------------|
+| 0 | `.agent/` (whole directory, 7 files) | **Always, first.** Contains distilled operating knowledge. |
 | 1 | `CREDENTIALS.md` | **If deploying.** Plaintext registry — gitignored. Contains every secret needed. |
 | 2 | `ARCHITECTURE.md` | Always skim — system topology, env var matrix, data flow. |
 | 3 | `DEPLOY_COOLIFY.md` | **If deploying to VPS.** Authoritative deploy procedure. |

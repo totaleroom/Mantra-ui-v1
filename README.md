@@ -124,7 +124,7 @@ Full walkthrough → [`DEPLOY_COOLIFY.md`](./DEPLOY_COOLIFY.md)
 | **Backend API work** | [`docs/api-contract.md`](./docs/api-contract.md) |
 | **Database work** | [`docs/database-schema.md`](./docs/database-schema.md) |
 | **Product scope** | [`docs/PRD.md`](./docs/PRD.md) |
-| **Autonomous AI agent** | [`AI_AGENT_BRIEF.md`](./AI_AGENT_BRIEF.md) + `CREDENTIALS.md` (gitignored) |
+| **Autonomous AI agent** | [`.agent/README.md`](./.agent/README.md) (skill pack) + [`AI_AGENT_BRIEF.md`](./AI_AGENT_BRIEF.md) + `CREDENTIALS.md` (gitignored) |
 
 ---
 
@@ -132,7 +132,8 @@ Full walkthrough → [`DEPLOY_COOLIFY.md`](./DEPLOY_COOLIFY.md)
 
 ```
 mantra-ui-v1/
-├── app/                  Next.js 14 App Router pages
+├── .agent/               AI skill pack — any agent continuing this project reads this first
+├── app/                  Next.js 16 App Router pages
 ├── components/           React components (shadcn/ui)
 ├── hooks/                Data + session hooks
 ├── lib/                  api-client, config, env (Zod), auth, sanitize

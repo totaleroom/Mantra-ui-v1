@@ -99,6 +99,25 @@ const nextConfig = {
 
   experimental: {
     optimizePackageImports: ['lucide-react', '@radix-ui/react-icons'],
+    // Dev-only: whitelist common localhost origins so Server Actions don't
+    // 403 when accessed through a browser-preview proxy (Windsurf uses a
+    // dynamic port on 127.0.0.1). Production keeps strict same-origin checks.
+    serverActions: isProd
+      ? undefined
+      : {
+          allowedOrigins: [
+            'localhost:5000',
+            '127.0.0.1:5000',
+            // Windsurf browser preview proxy — explicit list of the
+            // ports we've seen so far. Append more here if needed.
+            '127.0.0.1:52446',
+            '127.0.0.1:52447',
+            '127.0.0.1:52448',
+            '127.0.0.1:52449',
+            '127.0.0.1:52450',
+          ],
+          allowedForwardedHosts: ['localhost:5000', '127.0.0.1:5000'],
+        },
   },
 }
 
