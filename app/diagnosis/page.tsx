@@ -23,9 +23,13 @@ import type { SystemDiagnosis } from '@/lib/types'
 import { apiClient } from '@/lib/api-client'
 
 export default function DiagnosisPage() {
-  const [services, setServices] = useState(extendedDiagnosis)
+  type DiagnosisService = SystemDiagnosis & {
+    description: string
+    metrics: { label: string; value: string; status: 'error' | 'good' | 'warning' }[]
+  }
+  const [services, setServices] = useState<DiagnosisService[]>([])
   const [isRefreshing, setIsRefreshing] = useState(false)
-  const [lastRefresh, setLastRefresh] = useState(new Date())
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
   const [selectedService, setSelectedService] = useState<string | null>('Evolution API')
 
   // Auto-refresh every 30 seconds
@@ -49,7 +53,7 @@ export default function DiagnosisPage() {
             ? 'In-memory cache for sessions, rate limiting, and customer memories'
             : 'WhatsApp messaging gateway and core automation runtime',
         metrics: [
-          { label: 'Latency', value: `${s.latency}ms`, status: s.latency < 100 ? 'good' : s.latency < 500 ? 'warning' : 'error' },
+          { label: 'Latency', value: `${s.latency}ms`, status: (s.latency < 100 ? 'good' : s.latency < 500 ? 'warning' : 'error') as 'good' | 'warning' | 'error' },
         ],
       }))
       setServices(mapped)
@@ -121,8 +125,8 @@ export default function DiagnosisPage() {
               <div className="flex items-center gap-4">
                 <div className="text-right">
                   <p className="text-sm text-muted-foreground">Last updated</p>
-                  <p className="text-sm font-medium">
-                    {lastRefresh.toLocaleTimeString()}
+                  <p className="text-sm font-medium" suppressHydrationWarning>
+                    {lastRefresh ? lastRefresh.toLocaleTimeString() : '—'}
                   </p>
                 </div>
                 <Button

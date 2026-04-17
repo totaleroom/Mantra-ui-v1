@@ -16,8 +16,14 @@ const nextConfig = {
     ],
   },
 
-  // Allow Replit preview & VPS cross-origin HMR
-  allowedDevOrigins: ['*.replit.dev', '*.janeway.replit.dev', 'localhost'],
+  // Allow Replit preview, Windsurf browser preview, and VPS cross-origin HMR
+  allowedDevOrigins: [
+    '*.replit.dev',
+    '*.janeway.replit.dev',
+    'localhost',
+    '127.0.0.1',
+    '0.0.0.0',
+  ],
 
   async headers() {
     return [

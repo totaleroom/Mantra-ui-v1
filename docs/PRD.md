@@ -1,8 +1,26 @@
 # PRD: Mantra AI (Agentic SaaS Edition)
 
-**Version:** 2.1 (Production Ready - FinFlow Aesthetic)  
-**Infrastructure:** Hybrid (Next.js Vercel | Go & DB VPS 4GB RAM)  
+**Version:** 2.2 (Production Ready - Security Hardened)  
+**Infrastructure:** Hybrid (Next.js | Go Fiber | PostgreSQL | Redis | Evolution API)  
+**Deployment:** Docker Compose (VPS atau Local)  
 **Core Mission:** Automasi Agentic Workflow untuk 50+ UMKM dengan WhatsApp Gateway.
+
+---
+
+## 🆕 Release Notes (April 2026)
+
+### Security Hardening
+- ✅ Credential centralization: All `process.env` → `serverConfig`
+- ✅ Hardcoded IPs removed dari `docker-compose.yaml`
+- ✅ `.env.example` reorganized dengan 6 grouped sections
+- ✅ `.gitignore` updated dengan strict patterns
+- ✅ Database seeding dengan environment checks
+
+### Deployment Automation
+- ✅ **DEPLOY_LIVE.sh** - One-command deployment
+- ✅ **PRODUCTION.env.template** - Production environment template
+- ✅ **README-DEPLOY.md** - 5-minute deployment guide
+- ✅ **ARCHITECTURE.md** - Complete system documentation
 
 ---
 
@@ -14,32 +32,41 @@ Mantra AI adalah platform Multi-tenant Agentic SaaS yang menghubungkan UMKM deng
 
 ## 2. Tech Stack (The "Lean" Machine)
 
-| Layer | Technology | Deployment |
-|-------|------------|------------|
-| **Frontend** | Next.js 14 (App Router) + ShadcnUI + Tailwind | Vercel |
-| **Backend** | Go (Golang) Fiber | VPS Debian 12 |
-| **Database** | PostgreSQL (Relational) & Redis (Transient Memory) | VPS Docker |
-| **WA Bridge** | Evolution API v2 | VPS Docker |
-| **Connectivity** | Cloudflare Tunnel | Secure Bridge |
+| Layer | Technology | Deployment | Port | RAM |
+|-------|------------|------------|------|-----|
+| **Frontend** | Next.js 16 + ShadcnUI + Tailwind | Docker | 5000 | 256MB |
+| **Backend** | Go Fiber | Docker | 3001 | 256MB |
+| **Database** | PostgreSQL 15 | Docker | 5432 | 512MB |
+| **Cache** | Redis 7 | Docker | 6379 | 256MB |
+| **WA Bridge** | Evolution API | Docker | 8080 | 1GB |
+| **Total** | - | - | - | **~2.3GB** |
+
+### Connectivity Options
+- **Local:** Direct HTTP (localhost)
+- **Production:** Cloudflare Tunnel (HTTPS) atau Reverse Proxy
 
 ---
 
 ## 3. Feature Matrix (MoSCoW)
 
-### Must-Have (M)
+### Must-Have (M) - ✅ Implemented
 - **Multi-tenant Instance:** Isolasi data antar klien (1 VPS untuk 50+ klien)
-- **AI Provider Fallback:** Rotasi otomatis antar Groq, OpenRouter, dan OpenAI jika terjadi rate limit atau downtime
-- **WhatsApp QR Scanner:** Integrasi langsung di dashboard untuk pairing device klien
-- **RAG Isolation:** Setiap klien memiliki Knowledge Base sendiri yang tidak saling tercampur
+- **AI Provider Fallback:** Rotasi otomatis antar Groq, OpenRouter, dan OpenAI
+- **WhatsApp QR Scanner:** Integrasi langsung di dashboard untuk pairing device
+- **RAG Isolation:** Setiap klien memiliki Knowledge Base sendiri
+- **Credential Centralization:** Environment variables dengan Zod validation
+- **Automated Deployment:** One-command deployment script
 
-### Should-Have (S)
-- **Omniscient Inbox:** Dashboard pemantau seluruh chat aktif secara real-time
-- **AI Thought Process:** Kolom khusus yang menampilkan "logika berpikir" AI sebelum menjawab customer
-- **Token Billing & Limit:** Sistem kuota token per klien dengan notifikasi otomatis
+### Should-Have (S) - ✅ Implemented
+- **Omniscient Inbox:** Dashboard pemantau chat aktif real-time via WebSocket
+- **AI Thought Process:** Kolom logika berpikir AI sebelum menjawab
+- **Token Billing & Limit:** Sistem kuota token per klien
+- **Role-Based Access:** SUPER_ADMIN, CLIENT_ADMIN, STAFF
 
-### Could-Have (C)
-- **Transient Memory (TTL 4 Days):** Memori chat customer yang otomatis terhapus setelah 4 hari untuk privasi
-- **System Diagnosis:** Panel monitoring kesehatan database, redis, dan WA API dengan saran perbaikan otomatis
+### Could-Have (C) - ✅ Implemented
+- **Transient Memory (TTL 4 Days):** Memori auto-hapus setelah 4 hari
+- **System Diagnosis:** Panel monitoring dengan saran perbaikan
+- **Security Hardening:** XSS prevention, JWT validation, input sanitization
 
 ---
 

@@ -84,6 +84,13 @@ export const serverConfig =
 
         // ── [DEPLOYMENT] ──────────────────────────────────────
         frontendUrl: serverEnv('FRONTEND_URL'),
+        backendInternalUrl: serverEnv('BACKEND_INTERNAL_URL'),
+
+        // ── [DEV_ONLY] ────────────────────────────────────────
+        /** Dev-only: bypass Go backend, issue local JWT for UI testing */
+        devAuthBypass:
+          serverEnv('NODE_ENV', 'development') !== 'production' &&
+          (serverEnv('DEV_AUTH_BYPASS') === 'true' || serverEnv('DEV_AUTH_BYPASS') === '1'),
       }
     : null
 

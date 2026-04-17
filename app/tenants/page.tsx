@@ -71,9 +71,9 @@ export default function TenantsPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-[10px] md:text-sm text-muted-foreground">Total Tenants</p>
-                  <p className="text-xl md:text-2xl font-bold">
+                  <div className="text-xl md:text-2xl font-bold">
                     {isLoading ? <Skeleton className="h-6 md:h-8 w-8" /> : clients.length}
-                  </p>
+                  </div>
                 </div>
                 <div className="p-2 md:p-3 rounded-lg bg-primary/10">
                   <Users className="w-4 h-4 md:w-5 md:h-5 text-primary" />
@@ -86,9 +86,9 @@ export default function TenantsPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-[10px] md:text-sm text-muted-foreground">Active</p>
-                  <p className="text-xl md:text-2xl font-bold text-success">
+                  <div className="text-xl md:text-2xl font-bold text-success">
                     {isLoading ? <Skeleton className="h-6 md:h-8 w-8" /> : activeCount}
-                  </p>
+                  </div>
                 </div>
                 <div className="p-2 md:p-3 rounded-lg bg-success/10">
                   <Power className="w-4 h-4 md:w-5 md:h-5 text-success" />
@@ -101,9 +101,9 @@ export default function TenantsPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-[10px] md:text-sm text-muted-foreground">Tokens</p>
-                  <p className="text-xl md:text-2xl font-bold">
+                  <div className="text-xl md:text-2xl font-bold">
                     {isLoading ? <Skeleton className="h-6 md:h-8 w-12" /> : `${(totalTokens / 1000).toFixed(0)}k`}
-                  </p>
+                  </div>
                 </div>
                 <div className="p-2 md:p-3 rounded-lg bg-warning/10">
                   <Zap className="w-4 h-4 md:w-5 md:h-5 text-warning" />
@@ -116,9 +116,9 @@ export default function TenantsPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-[10px] md:text-sm text-muted-foreground">WA Instances</p>
-                  <p className="text-xl md:text-2xl font-bold">
+                  <div className="text-xl md:text-2xl font-bold">
                     {isLoading ? <Skeleton className="h-6 md:h-8 w-8" /> : totalInstances}
-                  </p>
+                  </div>
                 </div>
                 <div className="p-2 md:p-3 rounded-lg bg-info/10">
                   <MessageSquare className="w-4 h-4 md:w-5 md:h-5 text-info" />

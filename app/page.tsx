@@ -54,7 +54,7 @@ export default function OverviewPage() {
             value={`${connectedInstances}/${instances.length}`}
             description="connected"
             icon={MessageSquare}
-            status={connectedInstances === mockWhatsAppInstances.length ? 'success' : 'warning'}
+            status={instances.length > 0 && connectedInstances === instances.length ? 'success' : 'warning'}
           />
           <StatusCard
             title="Messages Today"

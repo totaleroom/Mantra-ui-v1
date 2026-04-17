@@ -16,6 +16,11 @@
 secrets/
 config/secrets/
 
+# Master credentials registry (local-only, for AI agents)
+CREDENTIALS.md
+CREDENTIALS.local.md
+credentials.local.*
+
 # ─────────────────────────────────────────────────────────────
 # [DEPENDENCIES] Package Managers
 # ─────────────────────────────────────────────────────────────
