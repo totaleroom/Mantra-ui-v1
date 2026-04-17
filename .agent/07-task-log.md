@@ -5,6 +5,50 @@
 
 ---
 
+## 2026-04-17 — Visual Tier 1 polish: violet + emerald brand system
+
+**Agent**: Cascade
+
+**What**:
+- `app/globals.css` — full rewrite. New design tokens: violet primary
+  (`oklch(0.52 0.22 284)` light / `0.68 0.22 284` dark), emerald accent
+  (`oklch(0.58 0.15 158)` / `0.72 0.17 158`), cooler neutrals with slight
+  blue tint, tiered radius system, motion tokens (ease-out/in-out/spring,
+  durations), layered shadows with subtle violet tint, ambient orb
+  backgrounds, grain texture, glass panel, cohesive chart palette
+  (violet/emerald/amber/coral/sky), skeleton shimmer, dot-live pulse,
+  text-gradient-brand, kbd badge, reduced-motion accessibility.
+- `app/login/page.tsx` — dual violet+emerald orbs, grain overlay, gradient
+  brand tile with glow, "All systems operational" live dot, gradient
+  heading.
+- `app/login/login-form.tsx` — submit button now uses violet→teal gradient
+  with glow shadow instead of flat white.
+- `components/dashboard/sidebar.tsx` — logo tile upgraded to violet→emerald
+  gradient with glow. Nav active state gets left-edge violet bar indicator
+  + refined hover transitions. Bg switched to `bg-sidebar` token for
+  consistency with tokens.
+- `components/feedback/empty-state.tsx` — icon tile now has violet halo
+  behind it, card-shadow treatment, better typography.
+
+**Why**: User reported UI felt "kurang maksimal, belum amazing." Baseline
+was generic shadcn grayscale — zero brand color. Introduced a coherent
+violet+emerald identity (violet = authority/brand, emerald = live/success)
+following the Linear / Raycast / Anthropic design language direction.
+
+**How verified**: `npx tsc --noEmit` exit 0. Dev server hot-reloaded cleanly
+(compiled in 116ms). Visual verification pending user preview.
+
+**Follow-ups**:
+- Tier 2 signature redesigns pending user's next green-light: "Live Pulse"
+  Overview redesign + Inbox two-pane layout.
+- Audit individual dashboard pages for remaining `bg-primary/10` etc. —
+  they now get violet, which is correct but density/spacing pass still
+  pending per-page.
+- Consider a subtle route-change transition (currently instant).
+- Command palette could pick up `glass` utility instead of its current bg.
+
+---
+
 ## 2026-04-17 — Hermes handoff + single-user deployment docs
 
 **Agent**: Cascade

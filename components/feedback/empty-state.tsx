@@ -26,15 +26,22 @@ export function EmptyState({ icon: Icon, title, description, action, className }
         className
       )}
     >
-      <div className="flex items-center justify-center w-14 h-14 rounded-full bg-secondary/50 mb-4">
-        <Icon className="w-7 h-7 text-muted-foreground" />
+      {/* Geometric backdrop + icon */}
+      <div className="relative mb-5">
+        <div
+          aria-hidden
+          className="absolute inset-0 -m-6 rounded-full bg-orb-violet blur-2xl opacity-40"
+        />
+        <div className="relative flex items-center justify-center w-16 h-16 rounded-2xl border border-border bg-card shadow-soft-md">
+          <Icon className="w-7 h-7 text-primary" strokeWidth={1.75} />
+        </div>
       </div>
-      <h3 className="text-base font-semibold text-foreground">{title}</h3>
+      <h3 className="text-base font-semibold text-foreground tracking-tight">{title}</h3>
       {description && (
-        <p className="text-sm text-muted-foreground mt-1.5 max-w-sm">{description}</p>
+        <p className="text-sm text-muted-foreground mt-2 max-w-sm leading-relaxed">{description}</p>
       )}
       {action && (
-        <div className="mt-5">
+        <div className="mt-6">
           {action.href ? (
             <Button size="sm" asChild>
               <a href={action.href}>{action.label}</a>

@@ -13,7 +13,11 @@ function SubmitButton() {
     <button
       type="submit"
       disabled={pending}
-      className="w-full flex items-center justify-center gap-2 rounded-lg bg-white px-4 py-2.5 text-sm font-semibold text-neutral-900 transition-all hover:bg-neutral-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:opacity-50 disabled:cursor-not-allowed"
+      className="group relative w-full flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition-all shadow-glow hover:shadow-[0_4px_32px_-4px_oklch(0.68_0.22_284/0.55)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[oklch(0.68_0.22_284)] focus-visible:ring-offset-2 focus-visible:ring-offset-[oklch(0.12_0.01_264)] disabled:opacity-60 disabled:cursor-not-allowed disabled:shadow-none"
+      style={{
+        background:
+          'linear-gradient(135deg, oklch(0.55 0.22 284) 0%, oklch(0.62 0.18 200) 100%)',
+      }}
     >
       {pending ? (
         <>
