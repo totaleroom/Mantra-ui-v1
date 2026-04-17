@@ -55,8 +55,20 @@ func Setup(app *fiber.App) {
 	whatsapp.Post("/", handlers.CreateWhatsAppInstance)
 	whatsapp.Get("/:id", handlers.GetWhatsAppInstance)
 	whatsapp.Delete("/:id", handlers.DeleteWhatsAppInstance)
+	whatsapp.Post("/:id/send", handlers.SendWhatsAppMessage)
 	whatsapp.Post("/:name/disconnect", handlers.DisconnectInstance)
 	whatsapp.Get("/:name/status", handlers.GetInstanceStatus)
+
+	// Evolution webhook receiver — NO JWT, authenticated via X-Webhook-Secret header.
+	// Own rate limiter: generous for real traffic, tight against unauth'd probing.
+	webhookLimiter := limiter.New(limiter.Config{
+		Max:        300,
+		Expiration: 1 * time.Minute,
+		KeyGenerator: func(c *fiber.Ctx) string {
+			return c.IP()
+		},
+	})
+	app.Post("/api/webhooks/evolution", webhookLimiter, handlers.EvolutionWebhook)
 
 	inbox := api.Group("/inbox")
 	inbox.Get("/messages", handlers.GetInboxMessages)

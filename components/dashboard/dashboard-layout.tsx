@@ -3,6 +3,7 @@
 import { ReactNode } from 'react'
 import { Sidebar } from './sidebar'
 import { Header } from './header'
+import { CommandPalette } from '@/components/command-palette'
 
 interface DashboardLayoutProps {
   children: ReactNode
@@ -22,6 +23,8 @@ export function DashboardLayout({ children, title, description }: DashboardLayou
           {children}
         </main>
       </div>
+      {/* Global ⌘K palette — mounted once per authenticated session */}
+      <CommandPalette />
     </div>
   )
 }

@@ -1,4 +1,4 @@
-FROM golang:1.22-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 WORKDIR /app
 
@@ -8,7 +8,11 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+# `go mod tidy` promotes any new direct imports (e.g. google/uuid) from
+# indirect → direct so the build doesn't complain about missing requires.
+# Then build statically stripped for the distroless-style runtime image.
+RUN go mod tidy && \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build -ldflags="-w -s" -o mantra-backend .
 
 FROM alpine:latest

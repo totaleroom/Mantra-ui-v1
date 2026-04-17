@@ -7,6 +7,7 @@ import (
         "io"
         "mantra-backend/config"
         "net/http"
+        "strings"
         "time"
 )
 
@@ -106,6 +107,63 @@ func (s *EvolutionService) CreateInstance(instanceName, webhookURL string) (*Evo
 
         result.Instance.APIKey = result.Hash.APIKey
         return &result.Instance, nil
+}
+
+// SetWebhook configures which backend URL Evolution should call for events on
+// an instance. Evolution will POST each message event to `url` with the full
+// payload. Events list keeps the wire small by only subscribing to what we use.
+//
+// When WEBHOOK_SECRET is configured, Evolution v2+ will forward it as a custom
+// `X-Webhook-Secret` header — older versions silently ignore the `headers`
+// field, in which case the operator must configure the header at the reverse
+// proxy layer (or disable webhook auth in dev).
+func (s *EvolutionService) SetWebhook(instanceName, url string) error {
+        payload := map[string]interface{}{
+                "url":             url,
+                "enabled":         true,
+                "webhookByEvents": false,
+                "webhookBase64":   false,
+                "events": []string{
+                        "MESSAGES_UPSERT",
+                        "CONNECTION_UPDATE",
+                },
+        }
+        if config.C != nil && config.C.WebhookSecret != "" {
+                payload["headers"] = map[string]string{
+                        "X-Webhook-Secret": config.C.WebhookSecret,
+                }
+        }
+        respBody, status, err := s.doRequest("POST", "/webhook/set/"+instanceName, payload)
+        if err != nil {
+                return fmt.Errorf("webhook set request failed: %v", err)
+        }
+        if status != http.StatusOK && status != http.StatusCreated {
+                // Strip the response body to a single line for easier log grep
+                body := strings.ReplaceAll(string(respBody), "\n", " ")
+                return fmt.Errorf("webhook set returned %d: %s", status, body)
+        }
+        return nil
+}
+
+// SendText dispatches a plain-text WhatsApp message via Evolution.
+// `to` should be a bare E.164 number (e.g. "6281234567890") — Evolution will
+// normalize it to the proper JID.
+func (s *EvolutionService) SendText(instanceName, to, text string) error {
+        payload := map[string]interface{}{
+                "number":  to,
+                "options": map[string]interface{}{"delay": 0, "presence": "composing"},
+                "textMessage": map[string]interface{}{
+                        "text": text,
+                },
+        }
+        respBody, status, err := s.doRequest("POST", "/message/sendText/"+instanceName, payload)
+        if err != nil {
+                return fmt.Errorf("send text request failed: %v", err)
+        }
+        if status != http.StatusOK && status != http.StatusCreated {
+                return fmt.Errorf("send text returned %d: %s", status, string(respBody))
+        }
+        return nil
 }
 
 func (s *EvolutionService) DeleteInstance(instanceName string) error {

@@ -70,6 +70,33 @@ export function useDeleteWhatsAppInstance() {
   })
 }
 
+// Send a manual WhatsApp message from the dashboard.
+// Backend: POST /api/whatsapp/instances/:id/send
+export function useSendWhatsAppMessage() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({
+      instanceId,
+      to,
+      text,
+    }: {
+      instanceId: number
+      to: string
+      text: string
+    }) =>
+      apiClient.post(`/api/whatsapp/instances/${instanceId}/send`, {
+        to,
+        text,
+      }),
+    onSuccess: () => {
+      // Refresh inbox so the new outbound message appears immediately
+      // (the WebSocket broadcast also pushes it, this is the belt-and-suspenders path)
+      queryClient.invalidateQueries({ queryKey: ['inbox'] })
+    },
+  })
+}
+
 // Disconnect WhatsApp instance
 export function useDisconnectWhatsAppInstance() {
   const queryClient = useQueryClient()

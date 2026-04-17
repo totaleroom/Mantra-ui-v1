@@ -31,6 +31,7 @@ import {
   X,
 } from 'lucide-react'
 import { useRealtimeInbox, useInboxStats, useClients } from '@/hooks/use-inbox'
+import { ReplyComposer } from '@/components/inbox/reply-composer'
 import type { InboxMessage } from '@/lib/types'
 
 export default function InboxPage() {
@@ -257,9 +258,16 @@ export default function InboxPage() {
           </Card>
         </div>
 
-        {/* Desktop Thought Process Panel */}
-        <div className="hidden lg:block">
+        {/* Desktop side panel: thought process + reply composer */}
+        <div className="hidden lg:flex lg:flex-col lg:gap-4 w-80 shrink-0">
           <ThoughtProcessPanel message={selectedMessage} />
+          {selectedMessage && (
+            <ReplyComposer
+              clientId={selectedMessage.clientId}
+              customerNumber={selectedMessage.customerNumber}
+              customerLabel={selectedMessage.customerNumber}
+            />
+          )}
         </div>
 
         {/* Mobile Thought Process Sheet */}

@@ -7,18 +7,25 @@ import (
 )
 
 type Config struct {
-	Port            string
-	DatabaseURL     string
-	RedisURL        string
-	JWTSecret       string
-	CORSOrigins     []string
-	FrontendURL     string
-	EvolutionURL    string
-	EvolutionKey    string
+	Port              string
+	DatabaseURL       string
+	RedisURL          string
+	JWTSecret         string
+	CORSOrigins       []string
+	FrontendURL       string
+	EvolutionURL      string
+	EvolutionKey      string
 	EvolutionInstance string
-	HermesAuthToken string
+	// PublicBackendURL is the externally-reachable URL that Evolution API
+	// will call for webhooks (e.g. https://api.mantra.yourdomain.com).
+	// If empty, webhook auto-registration is skipped.
+	PublicBackendURL string
+	// WebhookSecret authenticates incoming Evolution webhooks via the
+	// "X-Webhook-Secret" header. Required in production.
+	WebhookSecret    string
+	HermesAuthToken  string
 	AgentCallbackURL string
-	Env             string
+	Env              string
 }
 
 var C *Config
@@ -71,6 +78,8 @@ func Load() {
 		EvolutionURL:      evoURL,
 		EvolutionKey:      evoKey,
 		EvolutionInstance: getEnv("EVO_INSTANCE_NAME", "mantra_instance"),
+		PublicBackendURL:  getEnv("PUBLIC_BACKEND_URL", ""),
+		WebhookSecret:     getEnv("WEBHOOK_SECRET", ""),
 		HermesAuthToken:   getEnv("HERMES_AUTH_TOKEN", ""),
 		AgentCallbackURL:  getEnv("AGENT_CALLBACK_URL", ""),
 		Env:               getEnv("APP_ENV", "development"),
@@ -90,6 +99,8 @@ func validateRequired() {
 		{"FRONTEND_URL", C.FrontendURL, "Frontend URL for CORS"},
 		{"EVO_API_KEY / EVOLUTION_API_KEY", C.EvolutionKey, "Evolution API key"},
 		{"EVO_API_URL / EVOLUTION_API_URL", C.EvolutionURL, "Evolution API URL"},
+		{"WEBHOOK_SECRET", C.WebhookSecret, "Shared secret Evolution sends in X-Webhook-Secret header"},
+		{"PUBLIC_BACKEND_URL", C.PublicBackendURL, "Public URL Evolution calls for webhooks (e.g. https://api.example.com)"},
 		{"HERMES_AUTH_TOKEN", C.HermesAuthToken, "Hermes agent auth token"},
 	}
 

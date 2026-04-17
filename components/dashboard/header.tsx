@@ -1,11 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { LogOut, Search, Settings, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,6 +28,24 @@ export function Header({ title, description }: HeaderProps) {
   const router = useRouter()
   const { session, isLoading } = useSession()
   const [loggingOut, setLoggingOut] = useState(false)
+  const [isMac, setIsMac] = useState(false)
+
+  useEffect(() => {
+    if (typeof navigator !== 'undefined') {
+      setIsMac(/Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent))
+    }
+  }, [])
+
+  const openPalette = () => {
+    // Synthesize the same shortcut CommandPalette listens for.
+    const evt = new KeyboardEvent('keydown', {
+      key: 'k',
+      metaKey: isMac,
+      ctrlKey: !isMac,
+      bubbles: true,
+    })
+    window.dispatchEvent(evt)
+  }
 
   const handleLogout = async () => {
     setLoggingOut(true)
@@ -57,14 +74,20 @@ export function Header({ title, description }: HeaderProps) {
       </div>
 
       <div className="flex items-center gap-2 md:gap-4">
-        {/* Search */}
-        <div className="relative hidden md:block">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Search..."
-            className="w-64 pl-9 bg-secondary border-border"
-          />
-        </div>
+        {/* Command palette trigger — replaces static search input */}
+        <button
+          type="button"
+          onClick={openPalette}
+          className="hidden md:inline-flex items-center gap-2 w-64 px-3 py-2 text-sm rounded-md border border-border bg-secondary/60 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+          aria-label="Open command palette"
+        >
+          <Search className="w-4 h-4 shrink-0" />
+          <span className="flex-1 text-left">Search or run command…</span>
+          <kbd className="hidden lg:inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-border bg-background font-mono text-[10px] text-muted-foreground">
+            {isMac ? '⌘' : 'Ctrl'}
+            <span>K</span>
+          </kbd>
+        </button>
 
         {/* Theme toggle */}
         <ThemeToggle />

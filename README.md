@@ -8,12 +8,48 @@
 
 ## What it does
 
-- **Inbox** — Live WhatsApp conversations streamed via WebSocket
+- **Inbox** — Live WhatsApp conversations streamed via WebSocket, with manual reply composer
 - **AI Hub** — Multi-provider LLM fallback chain (OpenAI / Groq / OpenRouter)
 - **WhatsApp Gateway** — Evolution API instances, QR connect, webhook ingestion
+- **Auto-reply** — Inbound message → client system prompt + memory → AI fallback chain → outbound WhatsApp reply, all persisted + streamed live to the dashboard
 - **Tenants** — Multi-tenant isolation with per-tenant AI persona & token quota
 - **Diagnosis** — Live health checks + AI-powered repair recommendations
 - **RBAC** — `SUPER_ADMIN` / `CLIENT_ADMIN` / `STAFF` with middleware route protection
+- **Command palette** — `⌘K` / `Ctrl+K` to navigate, switch theme, sign out
+
+---
+
+## Message Flow (how auto-reply actually works)
+
+```
+Customer phone
+    │ 1. sends "Halo" to the tenant's WhatsApp number
+    ▼
+Evolution API
+    │ 2. POST {PUBLIC_BACKEND_URL}/api/webhooks/evolution
+    │    with X-Webhook-Secret header
+    ▼
+backend/handlers/webhooks.go · EvolutionWebhook
+    │ 3. Validates secret, parses MESSAGES_UPSERT,
+    │    skips echoes/media, extracts text + E.164 number,
+    │    hands off to orchestrator in a goroutine, returns 200
+    ▼
+backend/services/orchestrator.go · HandleInbound
+    │ 4. Resolves instance → client, enforces active/token gates,
+    │    idempotency guard on provider msg ID
+    │ 5. Persists inbound InboxMessage (→ WebSocket broadcast)
+    │ 6. Loads ClientAIConfig + CustomerMemory (last 10 turns)
+    │ 7. Calls AIFallbackService.Chat (priority chain with failover)
+    │ 8. EvolutionService.SendText → actual WhatsApp reply
+    │ 9. Persists outbound InboxMessage (→ WebSocket broadcast)
+    │10. Upserts CustomerMemory with new turn, bumps token counter
+    ▼
+Dashboard
+   Inbox page renders both messages live via /api/inbox/live WS.
+```
+
+Manual reply flow: dashboard `ReplyComposer` → `POST /api/whatsapp/instances/:id/send` →
+`Orchestrator.SendManual` → `SendText` → persist outbound → broadcast.
 
 ---
 
@@ -131,7 +167,7 @@ All variables live in `.env.example` (grouped in 6 sections):
 | `[FRONTEND_NEXTJS]` | `NEXT_PUBLIC_*` | ✅ yes |
 | `[BACKEND_GO]` | `JWT_SECRET`, `PORT`, `APP_ENV`, `FRONTEND_URL` | ❌ server only |
 | `[DATABASE_POSTGRES]` | `DATABASE_URL`, `POSTGRES_*`, `REDIS_URL` | ❌ server only |
-| `[WHATSAPP_PROVIDER]` | `EVO_API_URL`, `EVO_API_KEY`, `EVO_INSTANCE_NAME` | ❌ server only |
+| `[WHATSAPP_PROVIDER]` | `EVO_API_URL`, `EVO_API_KEY`, `EVO_INSTANCE_NAME`, `PUBLIC_BACKEND_URL`, `WEBHOOK_SECRET` | ❌ server only |
 | `[AGENTIC_AI]` | `HERMES_AUTH_TOKEN`, `OPENAI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY` | ❌ server only |
 | `[FEATURE_FLAGS]` | `NEXT_PUBLIC_ENABLE_DEVTOOLS`, `NEXT_PUBLIC_ENABLE_MOCK_DATA` | ✅ yes |
 
@@ -156,6 +192,61 @@ Validation is Zod (`lib/env.ts`) on the frontend side and explicit checks on the
 - [ ] CORS `FRONTEND_URL` set to the exact production frontend origin
 - [ ] UFW firewall restricts to `22/80/443` only
 - [ ] Automated backups scheduled (`pg_dump` cron → off-box)
+
+---
+
+## Post-deploy Smoke Test (first-time sanity check)
+
+Run this **once** after your first deploy to prove every layer of the
+auto-reply pipeline actually works. Each step has a clear failure signature
+so you know exactly which component to look at if something breaks.
+
+```bash
+# 1. Backend reachable + DB + Redis healthy
+curl -sSf https://api.yourdomain.com/health | jq
+# Expect: {"status":"ok","db":"connected","redis":"connected", ...}
+
+# 2. Login → cookie set
+curl -sS -c cookies.txt -X POST https://api.yourdomain.com/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@mantra.ai","password":"MantraAdmin2024!"}'
+
+# 3. Create a tenant (save the returned id)
+curl -sS -b cookies.txt -X POST https://api.yourdomain.com/api/clients \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Smoke Test Tenant","tokenLimit":1000}'
+
+# 4. Create an AI config for that tenant (use tenant id from step 3)
+curl -sS -b cookies.txt -X PUT \
+  https://api.yourdomain.com/api/clients/1/ai-config \
+  -H "Content-Type: application/json" \
+  -d '{"modelId":"gpt-3.5-turbo","systemPrompt":"You are a friendly CS bot for a bakery.","temperature":0.7,"memoryTtlDays":4}'
+
+# 5. Create a WhatsApp instance — Evolution will auto-register our webhook
+curl -sS -b cookies.txt -X POST \
+  https://api.yourdomain.com/api/whatsapp/instances \
+  -H "Content-Type: application/json" \
+  -d '{"instanceName":"smoke-test","clientId":1}'
+
+# 6. Connect via QR — open the dashboard /whatsapp page, scan with
+#    a real phone. Status should flip to CONNECTED within 30s.
+
+# 7. From a DIFFERENT phone, send "Halo" to the connected number.
+#    Watch these three things concurrently:
+#    - backend logs: "[Webhook] ... accepted" then orchestrator logs
+#    - dashboard Inbox page: inbound + outbound messages appear live
+#    - sender's phone: receives an AI-generated reply within seconds
+```
+
+If step 7 doesn't produce a reply:
+
+| Symptom | Likely cause | Where to look |
+|---------|--------------|---------------|
+| No webhook log at all | Evolution can't reach `PUBLIC_BACKEND_URL` | `docker compose logs evolution`, verify DNS + network |
+| `invalid webhook secret` in logs | `WEBHOOK_SECRET` mismatch between backend & Evolution | `docker compose exec evolution env \| grep -i webhook` |
+| Webhook received, no AI call | No `ClientAIConfig` row for this client | repeat step 4 |
+| `all providers failed` | No `AIProvider` rows active, or wrong API key | dashboard AI Hub page |
+| Reply not delivered | Instance status not `CONNECTED` | dashboard WhatsApp page, rescan QR |
 
 ---
 

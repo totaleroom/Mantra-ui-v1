@@ -5,6 +5,8 @@ import (
 	"log"
 	"mantra-backend/config"
 	"mantra-backend/database"
+	"mantra-backend/handlers"
+	"mantra-backend/models"
 	"mantra-backend/routes"
 	ws "mantra-backend/ws"
 	"os"
@@ -32,6 +34,15 @@ func main() {
 	database.ConnectRedis()
 
 	go ws.InboxHubInstance.Run()
+
+	// Wire orchestrator -> inbox WebSocket so every persisted message
+	// (inbound AND outbound) streams live to dashboard subscribers.
+	handlers.Orchestrator.OnMessagePersisted(func(msg *models.InboxMessage) {
+		if msg == nil {
+			return
+		}
+		ws.InboxHubInstance.BroadcastMessage(msg)
+	})
 
 	app := fiber.New(fiber.Config{
 		AppName:               "Mantra AI Backend",
