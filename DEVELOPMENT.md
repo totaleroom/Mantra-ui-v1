@@ -1,201 +1,212 @@
 # Mantra AI — Development Reference
 
-> **Dokumen ini hanya untuk keperluan development.**
-> Jangan commit ke repository publik atau share ke production environment.
+> Local dev / debugging / contributing guide.  
+> For deployment see [`DEPLOY_COOLIFY.md`](./DEPLOY_COOLIFY.md).  
+> For architecture see [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
 ---
 
-## Login Credentials (Development)
+## Prerequisites
 
-### Super Admin
-| Field    | Value                  |
-|----------|------------------------|
-| Email    | `admin@mantra.ai`      |
-| Password | `MantraAdmin2024!`     |
-| Role     | `SUPER_ADMIN`          |
-| Akses    | Semua halaman (termasuk `/diagnosis` dan `/settings`) |
-
-### Client Admin (Demo)
-| Field    | Value                  |
-|----------|------------------------|
-| Email    | `demo@mantra.ai`       |
-| Password | `admin123`             |
-| Role     | `CLIENT_ADMIN`         |
-| Akses    | Dashboard, Inbox, WhatsApp, AI Hub, Tenants (tidak bisa akses `/diagnosis` dan `/settings`) |
+| Tool | Version | Purpose |
+|------|---------|---------|
+| Node.js | ≥ 20 | Next.js runtime |
+| pnpm | ≥ 9 | Frontend package manager |
+| Go | ≥ 1.22 | Backend compile |
+| Docker + Compose | latest | Full-stack orchestration (recommended path) |
+| PostgreSQL | 15+ | Only needed if running backend without Docker |
+| Redis | 7 | Only needed if running backend without Docker |
 
 ---
 
-## Role-Based Access Control (RBAC)
+## Two ways to run the dev stack
 
-| Route         | SUPER_ADMIN | CLIENT_ADMIN | STAFF |
-|---------------|-------------|--------------|-------|
-| `/`           | ✅          | ✅           | ✅    |
-| `/inbox`      | ✅          | ✅           | ✅    |
-| `/whatsapp`   | ✅          | ✅           | ✅    |
-| `/ai-hub`     | ✅          | ✅           | ✅    |
-| `/tenants`    | ✅          | ✅           | ✅    |
-| `/settings`   | ✅          | ❌           | ❌    |
-| `/diagnosis`  | ✅          | ❌           | ❌    |
+### Option A — Full Docker (recommended, closest to prod)
 
----
-
-## URLs
-
-| Service       | URL (Development)                    | Port  |
-|---------------|--------------------------------------|-------|
-| Frontend      | `http://localhost:5000`              | 5000  |
-| Backend API   | `http://localhost:3001`              | 3001  |
-| Login Page    | `http://localhost:5000/login`        | —     |
-| Health Check  | `http://localhost:3001/health`       | —     |
-
----
-
-## Database (Replit Dev)
-
-| Field         | Value                                                           |
-|---------------|-----------------------------------------------------------------|
-| Connection    | `postgresql://postgres:password@helium/heliumdb?sslmode=disable` |
-| Host          | `helium`                                                        |
-| Database      | `heliumdb`                                                      |
-| User          | `postgres`                                                      |
-| Password      | `password`                                                      |
-
-### Tables yang Ada
-- `users` — akun login
-- `clients` — tenant/klien
-- `ai_providers` — konfigurasi AI (Groq, OpenRouter, OpenAI)
-- `whatsapp_instances` — instance WhatsApp
-- `inbox_messages` — pesan masuk/keluar
-- `customer_memories` — memori pelanggan (Redis + Postgres, TTL 4 hari)
-- `system_diagnoses` — status sistem
-- `client_ai_configs` — konfigurasi AI per klien
-
-### Query Berguna
-
-```sql
--- Lihat semua user
-SELECT id, email, role, created_at FROM users;
-
--- Reset password admin (hash dari "MantraAdmin2024!")
-UPDATE users SET password = '$2a$10$GNm/LleSefP5IS3.mbmNWuiHGOZGKTnDdEKrtdu/KBoZk.VO0XIby'
-WHERE email = 'admin@mantra.ai';
-
--- Tambah user baru (generate hash dulu via backend)
--- POST /api/auth/register { "email": "...", "password": "...", "role": "CLIENT_ADMIN" }
-```
-
----
-
-## Backend API
-
-Base URL: `http://localhost:3001`
-
-### Authentication
-| Method | Endpoint              | Body                          | Keterangan           |
-|--------|-----------------------|-------------------------------|----------------------|
-| POST   | `/api/auth/login`     | `{ email, password }`         | Login, set cookie    |
-| POST   | `/api/auth/logout`    | —                             | Clear cookie         |
-| GET    | `/api/auth/me`        | —                             | Info user yang login |
-
-### Quick Test Login (curl)
 ```bash
-curl -s -X POST http://localhost:3001/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"admin@mantra.ai","password":"MantraAdmin2024!"}' | jq .
+cp .env.example .env
+# edit .env: JWT_SECRET, POSTGRES_PASSWORD, EVO_API_KEY minimum
+
+docker compose up -d
+docker compose logs -f backend frontend
 ```
 
-### Health Check
+- Frontend: http://localhost:5000
+- Backend health: http://localhost:3001/health
+- Postgres: localhost:5432 (bound to 127.0.0.1)
+- Redis: localhost:6379 (bound to 127.0.0.1)
+
+Stop: `docker compose down` · Fresh reset (⚠ data loss): `docker compose down -v`
+
+### Option B — Frontend + Backend as host processes
+
+Useful for fast iteration on either side. Postgres + Redis still run in Docker.
+
 ```bash
-curl http://localhost:3001/health
+# Keep Postgres + Redis running
+docker compose up -d postgres redis
+
+# Terminal A — Go backend
+cd backend
+go mod download
+go run .            # listens on :3001
+
+# Terminal B — Next.js frontend
+pnpm install
+pnpm dev            # listens on :5000
 ```
 
-Expected response (production):
-```json
-{ "status": "ok", "db": "connected", "redis": "connected" }
-```
-
-Expected response (dev, tanpa Redis):
-```json
-{ "status": "degraded", "db": "connected", "redis": "unavailable" }
-```
+Frontend env (`.env`) for Option B should point `NEXT_PUBLIC_API_URL=http://localhost:3001`.
 
 ---
 
-## Environment Variables (Dev)
+## Default Accounts (dev only)
 
-File: `.env` (copy dari `.env.example`)
+| Role | Email | Password | Scope |
+|------|-------|----------|-------|
+| `SUPER_ADMIN` | `admin@mantra.ai` | `MantraAdmin2024!` | Full access incl. `/diagnosis`, `/settings` |
+| `CLIENT_ADMIN` | `demo@mantra.ai` | `admin123` | All routes except admin-only |
 
-```env
-# Backend
-PORT=3001
-APP_ENV=development
-JWT_SECRET=change-me-in-production-please
-DATABASE_URL=postgresql://postgres:password@helium/heliumdb?sslmode=disable
-REDIS_URL=redis://localhost:6379
+Seeded idempotently by `backend/database/init.sql` (only if `users` table is empty).  
+**Change immediately in any shared / deployed environment.**
 
-# Evolution API (isi jika sudah punya VPS)
-EVO_API_URL=https://vps-anda.com
-EVO_API_KEY=your-api-key
-EVO_INSTANCE_NAME=mantra_instance
+---
 
-# Frontend
-NEXT_PUBLIC_API_URL=http://localhost:3001
-NEXT_PUBLIC_WS_URL=ws://localhost:3001
-```
+## Dev Auth Bypass
+
+When the Go backend is unreachable and `APP_ENV=development` (or `NEXT_PUBLIC_ENABLE_MOCK_DATA=true`), `lib/auth.ts` issues a local JWT that matches the seeded credentials. This lets you hit the frontend UI without running the Go server. Real credentials are still required — the bypass only kicks in when the upstream login call fails.
+
+Disable in production by ensuring `APP_ENV=production`.
+
+---
+
+## Role-Based Access
+
+| Route | `SUPER_ADMIN` | `CLIENT_ADMIN` | `STAFF` |
+|-------|:-:|:-:|:-:|
+| `/` | ✅ | ✅ | ✅ |
+| `/inbox` | ✅ | ✅ | ✅ (read) |
+| `/whatsapp` | ✅ | ✅ | ❌ |
+| `/ai-hub` | ✅ | ✅ | ✅ |
+| `/tenants` | ✅ | ✅ | ✅ (read) |
+| `/settings` | ✅ | ❌ | ❌ |
+| `/diagnosis` | ✅ | ❌ | ❌ |
+
+Enforcement: `proxy.ts` (middleware) validates JWT from `mantra_session` cookie using `jose` + `JWT_SECRET`, injects `x-user-role` header, and redirects on role mismatch.
 
 ---
 
 ## Auth Flow
 
 ```
-User buka /inbox (belum login)
-  → middleware redirect ke /login?redirect=/inbox
+Unauthenticated hit on /inbox
+  → middleware redirects to /login?redirect=/inbox
 
-User submit form login
-  → Server Action → POST /api/auth/login (Go backend)
-  → Backend cek bcrypt, buat JWT, set cookie "mantra_session" (httpOnly, 24 jam)
-  → Redirect ke /inbox
+POST /login
+  → server action app/login/actions.ts → POST /api/auth/login (Go)
+  → Go: bcrypt compare → sign JWT → return token
+  → Next.js: set httpOnly cookie `mantra_session` (24h)
+  → redirect to ?redirect target
 
-Request berikutnya
-  → middleware verifikasi JWT dengan jose + JWT_SECRET
-  → Cek role untuk route terbatas
-  → Inject x-user-role header
+Subsequent requests
+  → proxy.ts verifies JWT with JOSE+JWT_SECRET
+  → checks role for protected routes
+  → injects x-user-role
 ```
 
 ---
 
-## Cara Jalankan (Development)
+## Backend API Quick Test
 
 ```bash
-# Terminal 1 — Backend
-cd backend && go run .
+# Health
+curl http://localhost:3001/health
 
-# Terminal 2 — Frontend
-pnpm run dev
+# Login
+curl -s -X POST http://localhost:3001/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@mantra.ai","password":"MantraAdmin2024!"}'
+
+# /api/auth/me with cookie
+curl http://localhost:3001/api/auth/me -H "Cookie: mantra_session=<token>"
 ```
 
-Atau pakai workflow di Replit:
-- **Start Backend** → Go Fiber di port 3001
-- **Start application** → Next.js di port 5000
+Full API reference → [`docs/api-contract.md`](./docs/api-contract.md)
 
 ---
 
-## Docker (Production)
+## Database
+
+Schema source of truth: [`backend/database/init.sql`](./backend/database/init.sql)  
+Human reference: [`docs/database-schema.md`](./docs/database-schema.md)
+
+Quick shell:
 
 ```bash
-# Build dan jalankan semua service
-cp .env.example .env
-# Edit .env dengan nilai production
+docker compose exec postgres psql -U mantra -d mantra_db
+```
+
+Common queries:
+
+```sql
+SELECT id, email, role FROM users;
+SELECT name, token_balance, is_active FROM clients;
+SELECT instance_name, status FROM whatsapp_instances;
+```
+
+Reset dev DB (⚠ destroys data):
+
+```bash
+docker compose down -v
 docker compose up -d
-
-# Cek status
-docker compose ps
-docker compose logs backend -f
 ```
 
-Wajib diisi di `.env` sebelum deploy:
-- `POSTGRES_PASSWORD`
-- `JWT_SECRET` (minimal 64 karakter, gunakan `openssl rand -base64 48`)
-- `FRONTEND_URL`
-- `EVO_API_KEY`
-- `HERMES_AUTH_TOKEN`
+---
+
+## Environment Variables (dev defaults)
+
+Only the essentials — full list in `.env.example`:
+
+```env
+APP_ENV=development
+PORT=3001
+JWT_SECRET=change-me-in-production-please
+DATABASE_URL=postgres://mantra:mantra@postgres:5432/mantra_db?sslmode=disable
+REDIS_URL=redis://redis:6379
+
+EVO_API_URL=http://evolution:8080
+EVO_API_KEY=dev-evolution-key
+EVO_INSTANCE_NAME=mantra_dev
+
+NEXT_PUBLIC_API_URL=http://localhost:3001
+NEXT_PUBLIC_WS_URL=ws://localhost:3001
+NEXT_PUBLIC_ENABLE_DEVTOOLS=true
+NEXT_PUBLIC_ENABLE_MOCK_DATA=false
+```
+
+**Never** read `process.env.*` directly in app code — always via `lib/config.ts` (`serverConfig` / `clientConfig`) on the frontend, and `config.Load()` on the Go side. Adding a new variable? Update all four places: `.env.example`, `lib/env.ts` (Zod), `lib/config.ts`, and `backend/config/config.go`.
+
+---
+
+## Common Dev Issues
+
+| Symptom | Fix |
+|---------|-----|
+| `EADDRINUSE :5000` | `netstat -ano \| findstr :5000` then kill the PID |
+| `connection refused postgres` | `docker compose up -d postgres` then re-run backend |
+| Login returns 401 with correct password | Bcrypt hash mismatch — re-run `init.sql` or `UPDATE users SET password=...` |
+| Frontend blank screen after login | Check `JWT_SECRET` matches between `.env` (frontend) and what backend signs with |
+| Hydration mismatch warning | Client-only state (Date, Math.random) — wrap with `useEffect` + `suppressHydrationWarning` |
+
+---
+
+## Contributing Checklist
+
+- [ ] `pnpm lint` clean
+- [ ] `pnpm typecheck` clean
+- [ ] `go vet ./...` clean in `backend/`
+- [ ] New env vars added to all 4 places (see above)
+- [ ] No `process.env.*` outside `lib/env.ts` and `lib/config.ts`
+- [ ] `ARCHITECTURE.md` updated if structural change
+- [ ] `docs/api-contract.md` updated for new endpoints
+- [ ] `docs/database-schema.md` updated for schema changes

@@ -1,8 +1,8 @@
 # Mantra AI - System Architecture Document
 
-> **Version**: MVP v1.0  
-> **Last Updated**: April 2026  
-> **Purpose**: Persistent memory context for AI-assisted development
+> **Version**: MVP v1.1 (Coolify deploy track)  
+> **Last Updated**: 2026  
+> **Purpose**: Single source of truth for system architecture and environment wiring
 
 ---
 
@@ -48,8 +48,8 @@ Mantra AI is a multi-tenant SaaS platform for AI-powered WhatsApp automation, ta
           │                │
           ▼                ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                     CLOUDFLARE TUNNEL (VPS)                     │
-│                        HTTPS Termination                        │
+│              COOLIFY + TRAEFIK (VPS, Debian 12)                 │
+│          Reverse proxy · Let's Encrypt · Healthchecks            │
 └─────────────────────────┬───────────────────────────────────────┘
                           │
           ┌───────────────┼───────────────┐
@@ -311,12 +311,15 @@ Redis:    localhost:6379
 Evolution: localhost:8080
 ```
 
-### Production (VPS via Cloudflare Tunnel)
+### Production (VPS via Coolify)
 ```
-Public URL: https://api.mantra.yourdomain.com (backend)
-Public URL: https://app.mantra.yourdomain.com (frontend)
-Internal:   Docker network (service names)
+Public URL: https://app.mantra.yourdomain.com (frontend — Traefik → frontend:5000)
+Public URL: https://api.mantra.yourdomain.com (backend  — Traefik → backend:3001)
+Internal:   Docker network (service names: postgres, redis, evolution, backend, frontend)
+DB/Redis:   bound to 127.0.0.1 only (not publicly exposed)
 ```
+
+See [`DEPLOY_COOLIFY.md`](./DEPLOY_COOLIFY.md) for the full provisioning walkthrough.
 
 ---
 
@@ -371,7 +374,7 @@ Internal:   Docker network (service names)
 - [ ] All database queries parameterized (GORM/pg auto-escapes)
 - [ ] All user input sanitized (lib/sanitize.ts)
 - [ ] JWT_SECRET >= 32 characters in production
-- [ ] HTTPS only in production (Cloudflare Tunnel)
+- [ ] HTTPS only in production (Coolify / Traefik / Let's Encrypt)
 
 ---
 
@@ -379,11 +382,11 @@ Internal:   Docker network (service names)
 
 | Issue | Location | Status |
 |-------|----------|--------|
-| Hardcoded default passwords | init.sql:159-161 | Documented, dev-only |
-| Direct process.env in auth.ts | lib/auth.ts:16,58 | Refactor to serverConfig |
-| Direct process.env in proxy.ts | proxy.ts:14,25 | Refactor to serverConfig |
-| No rate limiting | backend | TODO |
-| No request logging | backend | Basic Fiber logger only |
+| Hardcoded default passwords | `init.sql:169-188` | Idempotent bootstrap; dev-only. Change after first login. |
+| No rate limiting | backend | TODO — add Fiber limiter middleware |
+| No request logging aggregation | backend | Basic Fiber logger only; no centralized sink |
+| AI provider `api_key` stored plaintext | `ai_providers.api_key` | TODO — encrypt-at-rest (pgcrypto `pgp_sym_encrypt`) |
+| No automated backup schedule in repo | ops | TODO — cron `pg_dump` documented in DEPLOY_COOLIFY.md, not yet scripted |
 
 ---
 

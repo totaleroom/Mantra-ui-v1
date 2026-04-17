@@ -1,184 +1,177 @@
-# Mantra AI - Command Center Dashboard
+# Mantra AI — Agentic WhatsApp SaaS
 
-> Agentic SaaS Dashboard for Multi-Tenant AI WhatsApp Automation
+> Multi-tenant platform for AI-powered WhatsApp automation, built for UMKM scale.  
+> **Stack:** Next.js 14 · Go Fiber · PostgreSQL 15 · Redis 7 · Evolution API  
+> **Target deploy:** Debian 12 VPS via Coolify (self-hosted, full stack in one box)
 
-Production-ready frontend for managing 50+ UMKM clients with AI-powered WhatsApp automation.
+---
 
-## Tech Stack
+## What it does
 
-| Layer | Technology | Purpose |
-|-------|------------|---------|
-| **Framework** | Next.js 14 (App Router) | Server/Client rendering, routing |
-| **UI Library** | ShadcnUI + Tailwind CSS 4 | Component library, styling |
-| **State Management** | TanStack Query v5 | Server state, caching, mutations |
-| **Forms** | React Hook Form + Zod | Form handling, validation |
-| **Real-time** | Native WebSocket | Live inbox updates, QR streaming |
-| **Deployment** | Vercel | Edge deployment, analytics |
+- **Inbox** — Live WhatsApp conversations streamed via WebSocket
+- **AI Hub** — Multi-provider LLM fallback chain (OpenAI / Groq / OpenRouter)
+- **WhatsApp Gateway** — Evolution API instances, QR connect, webhook ingestion
+- **Tenants** — Multi-tenant isolation with per-tenant AI persona & token quota
+- **Diagnosis** — Live health checks + AI-powered repair recommendations
+- **RBAC** — `SUPER_ADMIN` / `CLIENT_ADMIN` / `STAFF` with middleware route protection
 
-## Directory Structure
+---
+
+## Quick Start — Local development
+
+```bash
+# 1. Install deps
+pnpm install
+
+# 2. Bootstrap environment
+cp .env.example .env
+# edit .env — at minimum set JWT_SECRET, POSTGRES_PASSWORD, EVO_API_KEY
+
+# 3. Start full stack via Docker
+docker compose up -d
+
+# 4. Open
+# Frontend: http://localhost:5000
+# Backend:  http://localhost:3001/health
+```
+
+Default login (change after first use):
+
+| Role | Email | Password |
+|------|-------|----------|
+| `SUPER_ADMIN` | `admin@mantra.ai` | `MantraAdmin2024!` |
+| `CLIENT_ADMIN` | `demo@mantra.ai` | `admin123` |
+
+### Running frontend/backend separately (no Docker)
+
+```bash
+# Terminal A — Go backend (requires local Postgres & Redis)
+cd backend && go run .
+
+# Terminal B — Next.js frontend
+pnpm dev
+```
+
+Details → [`DEVELOPMENT.md`](./DEVELOPMENT.md)
+
+---
+
+## Quick Start — Production (VPS + Coolify)
+
+```bash
+# On your VPS (Debian 12, 4GB RAM)
+ssh root@YOUR_VPS_IP
+
+# Install Coolify (one-liner)
+curl -fsSL https://cdn.coollabs.io/coolify/install.sh | bash
+
+# Then in Coolify UI:
+# 1. Connect your GitHub repo
+# 2. Choose "Docker Compose" build pack → uses repo docker-compose.yaml
+# 3. Paste env vars from .env.example (fill all REQUIRED)
+# 4. Map domains: app.domain.com → frontend:5000, api.domain.com → backend:3001
+# 5. Deploy — Coolify handles SSL, Traefik reverse proxy, healthchecks
+```
+
+Full walkthrough → [`DEPLOY_COOLIFY.md`](./DEPLOY_COOLIFY.md)
+
+---
+
+## Documentation Map
+
+| Audience | Start here |
+|----------|-----------|
+| **Just exploring** | this README |
+| **Local dev / new contributor** | [`DEVELOPMENT.md`](./DEVELOPMENT.md) |
+| **System understanding** | [`ARCHITECTURE.md`](./ARCHITECTURE.md) |
+| **Deploying to VPS** | [`DEPLOY_COOLIFY.md`](./DEPLOY_COOLIFY.md) |
+| **Backend API work** | [`docs/api-contract.md`](./docs/api-contract.md) |
+| **Database work** | [`docs/database-schema.md`](./docs/database-schema.md) |
+| **Product scope** | [`docs/PRD.md`](./docs/PRD.md) |
+| **Autonomous AI agent** | [`AI_AGENT_BRIEF.md`](./AI_AGENT_BRIEF.md) + `CREDENTIALS.md` (gitignored) |
+
+---
+
+## Repository Layout
 
 ```
-mantra-ui/
-├── app/                          # Next.js App Router pages
-│   ├── page.tsx                  # Dashboard overview
-│   ├── ai-hub/page.tsx           # AI Provider management
-│   ├── whatsapp/page.tsx         # WhatsApp Gateway (Evolution API)
-│   ├── inbox/page.tsx            # Omniscient Inbox (real-time)
-│   ├── tenants/
-│   │   ├── page.tsx              # Tenant list
-│   │   └── [id]/page.tsx         # Tenant configuration
-│   ├── diagnosis/page.tsx        # System health (SUPER_ADMIN only)
-│   ├── settings/page.tsx         # Global settings (SUPER_ADMIN only)
-│   ├── layout.tsx                # Root layout with providers
-│   └── globals.css               # Design tokens, theme
-│
-├── components/
-│   ├── dashboard/                # Layout components
-│   │   ├── sidebar.tsx           # Mobile-responsive navigation
-│   │   ├── header.tsx            # Page header
-│   │   └── dashboard-layout.tsx  # Main layout wrapper
-│   │
-│   ├── ai-hub/                   # AI Provider components
-│   │   ├── add-provider-dialog.tsx
-│   │   ├── ai-provider-card.tsx
-│   │   └── model-selector.tsx
-│   │
-│   ├── whatsapp/                 # WhatsApp Gateway components
-│   │   ├── create-instance-dialog.tsx
-│   │   ├── instance-card.tsx
-│   │   └── qr-code-dialog.tsx    # Base64 QR stream support
-│   │
-│   ├── inbox/                    # Inbox components
-│   │   ├── message-card.tsx      # XSS-sanitized messages
-│   │   └── thought-process-panel.tsx
-│   │
-│   ├── diagnosis/                # System diagnosis components
-│   │   ├── service-status-card.tsx
-│   │   └── ai-recommendation-panel.tsx
-│   │
-│   ├── providers/
-│   │   └── query-provider.tsx    # TanStack Query setup
-│   │
-│   └── ui/                       # ShadcnUI components
-│
-├── hooks/                        # Custom React hooks
-│   ├── use-ai-provider.ts        # AI provider CRUD operations
-│   ├── use-whatsapp.ts           # WhatsApp instance + QR streaming
-│   ├── use-inbox.ts              # Real-time inbox WebSocket
-│   ├── use-tenant.ts             # Tenant configuration
-│   └── index.ts                  # Barrel export
-│
-├── lib/
-│   ├── api-client.ts             # Typed fetch wrapper
-│   ├── types.ts                  # TypeScript interfaces
-│   ├── validations.ts            # Zod schemas
-│   ├── sanitize.ts               # XSS prevention utilities
-│   ├── utils.ts                  # Utility functions
-│   └── mock-data.ts              # Development mock data
-│
-├── docs/                         # Documentation
-│   ├── schema.ts                 # Database schema (Drizzle ORM)
-│   ├── PRD.md                    # Product requirements
-│   ├── api-contract.md           # API endpoint specifications
-│   ├── deployment-guide.md       # VPS deployment instructions
-│   ├── backend-boilerplate-hint.go
-│   ├── vercel-env-list.txt       # Environment variables
-│   └── handover-manifest.md      # Integration summary
-│
-├── middleware.ts                 # Route protection, security headers
-├── next.config.mjs               # Next.js configuration
-└── package.json
+mantra-ui-v1/
+├── app/                  Next.js 14 App Router pages
+├── components/           React components (shadcn/ui)
+├── hooks/                Data + session hooks
+├── lib/                  api-client, config, env (Zod), auth, sanitize
+├── backend/              Go Fiber API
+│   ├── main.go           entry + /health + graceful shutdown
+│   ├── config/           env loading & validation
+│   ├── database/         postgres.go, redis.go, init.sql (DDL)
+│   ├── models/           GORM models
+│   ├── handlers/         HTTP handlers (auth, ai, whatsapp, inbox, …)
+│   ├── middleware/       JWT auth + RBAC
+│   ├── routes/           route registration
+│   ├── services/         ai_fallback, evolution, memory
+│   └── ws/               WebSocket hubs (inbox live, QR stream)
+├── docs/                 api-contract, database-schema, PRD
+├── docker-compose.yaml   Full stack orchestration
+├── .env.example          All environment variables (grouped & documented)
+├── ARCHITECTURE.md       System architecture reference
+├── DEPLOY_COOLIFY.md     VPS + Coolify deployment guide
+├── DEVELOPMENT.md        Local dev reference
+├── AI_AGENT_BRIEF.md     Operational brief for autonomous agents
+└── CREDENTIALS.md        (gitignored) plaintext secrets registry
 ```
+
+---
 
 ## Environment Variables
 
-Required for Vercel deployment:
+All variables live in `.env.example` (grouped in 6 sections):
 
-```env
-# Backend API (Go Fiber via Cloudflare Tunnel)
-NEXT_PUBLIC_API_URL=https://api.mantra.yourdomain.com
+| Group | Prefix / Keys | Exposed to browser? |
+|-------|---------------|---------------------|
+| `[FRONTEND_NEXTJS]` | `NEXT_PUBLIC_*` | ✅ yes |
+| `[BACKEND_GO]` | `JWT_SECRET`, `PORT`, `APP_ENV`, `FRONTEND_URL` | ❌ server only |
+| `[DATABASE_POSTGRES]` | `DATABASE_URL`, `POSTGRES_*`, `REDIS_URL` | ❌ server only |
+| `[WHATSAPP_PROVIDER]` | `EVO_API_URL`, `EVO_API_KEY`, `EVO_INSTANCE_NAME` | ❌ server only |
+| `[AGENTIC_AI]` | `HERMES_AUTH_TOKEN`, `OPENAI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY` | ❌ server only |
+| `[FEATURE_FLAGS]` | `NEXT_PUBLIC_ENABLE_DEVTOOLS`, `NEXT_PUBLIC_ENABLE_MOCK_DATA` | ✅ yes |
 
-# WebSocket endpoints (same domain, different path)
-NEXT_PUBLIC_WS_URL=wss://api.mantra.yourdomain.com
+Access pattern (do **not** read `process.env` directly in app code):
+- **Frontend server code:** import `serverConfig` from `lib/config.ts`
+- **Frontend client code:** import `clientConfig` from `lib/config.ts` (only `NEXT_PUBLIC_*`)
+- **Backend Go:** import `config.Load()` from `backend/config/config.go`
 
-# Optional: Analytics
-NEXT_PUBLIC_VERCEL_ANALYTICS_ID=your-analytics-id
-```
+Validation is Zod (`lib/env.ts`) on the frontend side and explicit checks on the Go side.
 
-## Getting Started
+---
 
-```bash
-# Install dependencies
-pnpm install
+## Security & Production Checklist
 
-# Development
-pnpm dev
+- [ ] `JWT_SECRET` regenerated (`openssl rand -base64 48`) — **not** the example value
+- [ ] `POSTGRES_PASSWORD` regenerated (strong, 20+ chars)
+- [ ] `HERMES_AUTH_TOKEN` regenerated
+- [ ] Default admin passwords changed after first login
+- [ ] `.env` is gitignored (verify: `git check-ignore .env`)
+- [ ] Postgres & Redis ports bound to `127.0.0.1` (see `docker-compose.yaml`) — **not** publicly exposed
+- [ ] HTTPS active on frontend + backend (Coolify / Traefik handles this)
+- [ ] CORS `FRONTEND_URL` set to the exact production frontend origin
+- [ ] UFW firewall restricts to `22/80/443` only
+- [ ] Automated backups scheduled (`pg_dump` cron → off-box)
 
-# Production build
-pnpm build
-pnpm start
-```
+---
 
-## Role-Based Access Control
+## Resource Budget
 
-| Role | Access |
-|------|--------|
-| `SUPER_ADMIN` | Full access to all routes including `/diagnosis` and `/settings` |
-| `CLIENT_ADMIN` | All routes except `/diagnosis` and `/settings` |
-| `STAFF` | Read-only access to `/inbox` and `/tenants` |
+| Service | RAM | CPU |
+|---------|-----|-----|
+| PostgreSQL 15 | 512 MB | shared |
+| Redis 7 | 256 MB | shared |
+| Evolution API | 1 GB | shared |
+| Go backend | 256 MB | shared |
+| Next.js frontend | 256 MB | shared |
+| **Total** | **~2.3 GB** | fits on 4 GB VPS |
 
-Route protection is handled in `middleware.ts` with security headers for XSS prevention.
-
-## Backend Integration Handover
-
-### For Go Fiber Backend Developers
-
-1. **Read the API Contract**: See `docs/api-contract.md` for all endpoints, request/response schemas, and WebSocket events.
-
-2. **Use the Boilerplate**: `docs/backend-boilerplate-hint.go` contains Go structs matching the frontend types exactly.
-
-3. **Database Schema**: `docs/schema.ts` is the Drizzle ORM schema - use this as the source of truth for PostgreSQL tables.
-
-4. **WebSocket Requirements**:
-   - `/api/inbox/live` - Real-time message feed (JSON messages)
-   - `/api/whatsapp/instances/:name/qr` - Base64 QR code stream
-
-5. **CORS Configuration**: Backend must allow:
-   - Origins: Your Vercel domain
-   - Methods: GET, POST, PUT, DELETE, PATCH
-   - Headers: Content-Type, Authorization
-
-### For Hermes Agent (VPS Deployment)
-
-See `docs/deployment-guide.md` for complete Docker Compose setup including:
-- PostgreSQL (512MB RAM limit)
-- Redis (256MB RAM limit)  
-- Evolution API (1GB RAM limit)
-- Go Backend (256MB RAM limit)
-- Cloudflare Tunnel configuration
-
-## Security Features
-
-- **Route Protection**: Middleware-based role checks
-- **XSS Prevention**: All dynamic content sanitized via `lib/sanitize.ts`
-- **CSP Headers**: Strict Content Security Policy
-- **Input Validation**: Zod schemas for all forms
-- **Secure Cookies**: HTTP-only session cookies (backend implementation)
-
-## Performance Optimizations
-
-- **Skeleton Loading**: Every data-fetching page has skeleton states
-- **Optimistic Updates**: Instant UI feedback for toggle operations
-- **Query Caching**: TanStack Query with smart invalidation
-- **Code Splitting**: Dynamic imports for large components
-- **Mobile-First**: Responsive design with mobile drawer navigation
-
-## Built with v0
-
-This repository is linked to a [v0](https://v0.app) project.
-
-[Continue working on v0](https://v0.app/chat/projects/prj_kYxKkN9jPU30qLrvrEHOsskTIydA)
+---
 
 ## License
 
-Proprietary - Mantra AI
+Proprietary — Mantra AI.

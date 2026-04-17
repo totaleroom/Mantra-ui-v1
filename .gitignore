@@ -106,6 +106,9 @@ coverage/
 # ─────────────────────────────────────────────────────────────
 *.tmp
 *.temp
+*.new
+*.bak
+*.orig
 .cache/
 
 # Replit specific
