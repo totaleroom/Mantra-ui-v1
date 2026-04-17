@@ -5,6 +5,44 @@
 
 ---
 
+## 2026-04-17 — Hermes handoff + single-user deployment docs
+
+**Agent**: Cascade
+
+**What**:
+- `.agent/08-hermes-handoff.md` — Hermes's operating envelope: what he can
+  do without asking, what requires approval, credential locations, standard
+  workflow, escalation path, identity discipline.
+- `.agent/09-single-user-deployment.md` — Tailscale + Coolify topology
+  variant. Documents that Evolution → backend webhook is container-internal
+  (`http://backend:3001`), so no public domain is required.
+- `scripts/hermes-check.sh` — pre-flight check script: validates tools,
+  repo, docker services, health endpoint, disk, Tailscale. Exits non-zero
+  on failure so Hermes can auto-detect broken VPS state.
+- `.env.example` — added header explaining the two supported deployment
+  profiles (public SaaS vs single-user Tailscale).
+- `.agent/README.md` — reading order now includes files 08 and 09.
+
+**Why**: Operator will run Hermes as a persistent coding agent on the VPS.
+Needed explicit boundaries + onboarding so Hermes (or any successor agent)
+can pick up work without the operator re-briefing. Also operator chose
+single-user Tailscale topology — documented the simplifications vs the
+generic public-SaaS assumptions baked into the original README/DEPLOY.
+
+**How verified**: Documentation-only + shell script. `tsc` + `next build`
+not re-run (no JS/TS/Go touched). Shell script is bash strict-mode and
+uses only POSIX + docker/tailscale tools.
+
+**Follow-ups**:
+- When operator installs Hermes on VPS, confirm `scripts/hermes-check.sh`
+  actually exits 0 in the healthy state and produces useful output.
+- Consider adding `scripts/backup.sh` (documented inline in 09 but not
+  committed as a file). Low priority — operator can copy from docs.
+- If operator later buys a domain + goes multi-tenant, the migration
+  procedure is in `09-single-user-deployment.md § When you migrate`.
+
+---
+
 ## 2026-04-17 — Skill pack `.agent/` created
 
 **Agent**: Cascade (Sonnet 4.5)

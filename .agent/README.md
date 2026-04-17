@@ -30,6 +30,8 @@ all visible live on the dashboard.**
 | 5 | `05-gotchas.md` | Mistakes already made. Do not repeat them. |
 | 6 | `06-verification.md` | How to prove your change works. Run before marking done. |
 | 7 | `07-task-log.md` | What previous agents did. Append your entry when done. |
+| 8 | `08-hermes-handoff.md` | **If you are Hermes**, this is your operating envelope. Read it end-to-end. |
+| 9 | `09-single-user-deployment.md` | Actual deployment topology (Tailscale + Coolify, no public domain). |
 
 After reading, also glance at (in repo root):
 
