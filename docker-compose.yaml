@@ -183,7 +183,7 @@ services:
       # Server-to-server — hits backend over docker network directly
       BACKEND_INTERNAL_URL: http://backend:3001
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
-      FRONTEND_URL: ${FRONTEND_URL:-http://43.157.223.29:5000}
+      FRONTEND_URL: ${FRONTEND_URL:?FRONTEND_URL is required}
       EVO_API_KEY: ${EVO_API_KEY:-}
       HERMES_AUTH_TOKEN: ${HERMES_AUTH_TOKEN:-}
     depends_on:
