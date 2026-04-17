@@ -11,11 +11,13 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/gofiber/fiber/v2/middleware/requestid"
 	"github.com/joho/godotenv"
 )
 
@@ -32,13 +34,26 @@ func main() {
 	go ws.InboxHubInstance.Run()
 
 	app := fiber.New(fiber.Config{
-		AppName:      "Mantra AI Backend",
-		ErrorHandler: errorHandler,
+		AppName:               "Mantra AI Backend",
+		ErrorHandler:          errorHandler,
+		DisableStartupMessage: true,
+		// Sensible request limits so a misbehaving client can't exhaust memory.
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  120 * time.Second,
+		BodyLimit:    4 * 1024 * 1024, // 4 MB
 	})
 
-	app.Use(recover.New())
+	app.Use(recover.New(recover.Config{EnableStackTrace: true}))
+	app.Use(requestid.New(requestid.Config{
+		Header:     "X-Request-ID",
+		ContextKey: "requestid",
+	}))
+	// Structured access log (JSON-ish, one line per request) including latency + request id.
 	app.Use(logger.New(logger.Config{
-		Format: "[${time}] ${status} - ${method} ${path} (${latency})\n",
+		Format:     `{"ts":"${time}","level":"info","msg":"http","rid":"${locals:requestid}","status":${status},"method":"${method}","path":"${path}","latency":"${latency}","ip":"${ip}","bytes":${bytesSent}}` + "\n",
+		TimeFormat: time.RFC3339,
+		TimeZone:   "UTC",
 	}))
 
 	corsOrigins := strings.Join(config.C.CORSOrigins, ",")
@@ -77,32 +92,18 @@ func main() {
 }
 
 func healthCheck(c *fiber.Ctx) error {
-	dbOK := false
-	redisOK := false
-	dbLatency := 0
-	redisLatency := 0
+	const probeTimeout = 2 * time.Second
 
-	if database.DB != nil {
-		if sqlDB, err := database.DB.DB(); err == nil {
-			if err := sqlDB.Ping(); err == nil {
-				dbOK = true
-			}
-		}
-	}
-
-	if database.Redis != nil {
-		ctx := context.Background()
-		if err := database.Redis.Ping(ctx).Err(); err == nil {
-			redisOK = true
-		}
-	}
+	dbOK, dbLatencyMs := probeDB(probeTimeout)
+	redisOK, redisLatencyMs := probeRedis(probeTimeout)
 
 	body := fiber.Map{
-		"service": "mantra-backend",
-		"db":      statusLabel(dbOK),
-		"redis":   statusLabel(redisOK),
-		"dbLatencyMs":    dbLatency,
-		"redisLatencyMs": redisLatency,
+		"service":        "mantra-backend",
+		"db":             statusLabel(dbOK),
+		"redis":          statusLabel(redisOK),
+		"dbLatencyMs":    dbLatencyMs,
+		"redisLatencyMs": redisLatencyMs,
+		"timestamp":      time.Now().UTC().Format(time.RFC3339),
 	}
 
 	if dbOK && redisOK {
@@ -112,6 +113,36 @@ func healthCheck(c *fiber.Ctx) error {
 
 	body["status"] = "degraded"
 	return c.Status(fiber.StatusServiceUnavailable).JSON(body)
+}
+
+func probeDB(timeout time.Duration) (bool, int64) {
+	if database.DB == nil {
+		return false, -1
+	}
+	sqlDB, err := database.DB.DB()
+	if err != nil {
+		return false, -1
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	start := time.Now()
+	if err := sqlDB.PingContext(ctx); err != nil {
+		return false, -1
+	}
+	return true, time.Since(start).Milliseconds()
+}
+
+func probeRedis(timeout time.Duration) (bool, int64) {
+	if database.Redis == nil {
+		return false, -1
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	start := time.Now()
+	if err := database.Redis.Ping(ctx).Err(); err != nil {
+		return false, -1
+	}
+	return true, time.Since(start).Milliseconds()
 }
 
 func statusLabel(ok bool) string {

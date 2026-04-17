@@ -66,10 +66,12 @@ async function devAuthIssue(email: string): Promise<LoginResult> {
     email === 'admin@mantra.ai' ? 'SUPER_ADMIN' : 'CLIENT_ADMIN'
   const userId = email === 'admin@mantra.ai' ? '1' : '2'
 
+  // Match backend session duration (see backend/handlers/auth.go:sessionDuration).
   const token = await new SignJWT({ userId, email, role })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
-    .setExpirationTime('24h')
+    .setNotBefore(Math.floor(Date.now() / 1000))
+    .setExpirationTime('8h')
     .sign(new TextEncoder().encode(secret))
 
   return {

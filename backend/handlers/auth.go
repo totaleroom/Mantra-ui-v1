@@ -12,6 +12,17 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// Authentication tunables — change here and nowhere else.
+const (
+	// bcryptCost 12 is the current OWASP recommendation for passwords
+	// (takes ~250ms on a modern CPU — painful for brute force, fine for a single login).
+	bcryptCost = 12
+
+	// sessionDuration balances security vs UX: long enough to cover a working
+	// session, short enough to limit exposure if a cookie leaks.
+	sessionDuration = 8 * time.Hour
+)
+
 type LoginRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
@@ -60,8 +71,9 @@ func Login(c *fiber.Ctx) error {
 		Email:  user.Email,
 		Role:   string(user.Role),
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(sessionDuration)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			NotBefore: jwt.NewNumericDate(time.Now()),
 		},
 	}
 
@@ -77,10 +89,11 @@ func Login(c *fiber.Ctx) error {
 	c.Cookie(&fiber.Cookie{
 		Name:     "mantra_session",
 		Value:    tokenStr,
+		Path:     "/",
 		HTTPOnly: true,
 		Secure:   config.C.IsProd(),
 		SameSite: "Lax",
-		MaxAge:   86400,
+		MaxAge:   int(sessionDuration.Seconds()),
 	})
 
 	return c.JSON(fiber.Map{
@@ -95,7 +108,18 @@ func Login(c *fiber.Ctx) error {
 }
 
 func Logout(c *fiber.Ctx) error {
-	c.ClearCookie("mantra_session")
+	// ClearCookie alone leaves Path/Secure mismatched in some browsers,
+	// so we overwrite with an expired cookie using the same attributes.
+	c.Cookie(&fiber.Cookie{
+		Name:     "mantra_session",
+		Value:    "",
+		Path:     "/",
+		HTTPOnly: true,
+		Secure:   config.C.IsProd(),
+		SameSite: "Lax",
+		MaxAge:   -1,
+		Expires:  time.Unix(0, 0),
+	})
 	return c.JSON(fiber.Map{"success": true})
 }
 
@@ -140,7 +164,14 @@ func Register(c *fiber.Ctx) error {
 		})
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if len(req.Password) < 8 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Password must be at least 8 characters",
+			"code":  "WEAK_PASSWORD",
+		})
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcryptCost)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to hash password",

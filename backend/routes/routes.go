@@ -4,19 +4,36 @@ import (
 	"mantra-backend/handlers"
 	"mantra-backend/middleware"
 	ws "mantra-backend/ws"
+	"time"
 
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/limiter"
 )
 
 func Setup(app *fiber.App) {
-	app.Get("/health", func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{"status": "ok", "service": "mantra-backend"})
+	// Note: the real `/health` is registered in main.go with real DB+Redis probes.
+	// This fallback is kept only in case Setup is called standalone in tests.
+
+	// Per-IP rate limiter on authentication endpoints to slow down credential stuffing.
+	// 10 requests per minute per IP is generous for humans and painful for bots.
+	authLimiter := limiter.New(limiter.Config{
+		Max:        10,
+		Expiration: 1 * time.Minute,
+		KeyGenerator: func(c *fiber.Ctx) string {
+			return c.IP()
+		},
+		LimitReached: func(c *fiber.Ctx) error {
+			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
+				"error": "Too many requests. Please try again later.",
+				"code":  "RATE_LIMITED",
+			})
+		},
 	})
 
 	auth := app.Group("/api/auth")
-	auth.Post("/login", handlers.Login)
-	auth.Post("/register", handlers.Register)
+	auth.Post("/login", authLimiter, handlers.Login)
+	auth.Post("/register", authLimiter, handlers.Register)
 	auth.Post("/logout", middleware.JWTProtected(), handlers.Logout)
 	auth.Get("/me", middleware.JWTProtected(), handlers.Me)
 

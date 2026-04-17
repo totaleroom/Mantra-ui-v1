@@ -30,7 +30,8 @@ export async function loginAction(
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
-    maxAge: 60 * 60 * 24, // 24 hours
+    // Must match backend sessionDuration (backend/handlers/auth.go).
+    maxAge: 60 * 60 * 8, // 8 hours
     path: '/',
   })
 

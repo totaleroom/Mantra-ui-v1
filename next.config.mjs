@@ -1,33 +1,64 @@
 /** @type {import('next').NextConfig} */
+
+// Build a strict, production-ready Content Security Policy.
+// unsafe-inline on styles is required by Tailwind JIT runtime;
+// unsafe-eval is required by Next.js dev HMR; we only allow it outside production.
+const isProd = process.env.NODE_ENV === 'production'
+
+const apiOrigin = process.env.NEXT_PUBLIC_API_URL || ''
+const wsOrigin = process.env.NEXT_PUBLIC_WS_URL || ''
+
+const csp = [
+  `default-src 'self'`,
+  `base-uri 'self'`,
+  `form-action 'self'`,
+  `frame-ancestors 'self'`,
+  `object-src 'none'`,
+  `img-src 'self' data: blob: https:`,
+  `font-src 'self' data:`,
+  `style-src 'self' 'unsafe-inline'`,
+  `script-src 'self'${isProd ? '' : " 'unsafe-eval' 'unsafe-inline'"}`,
+  `connect-src 'self' ${apiOrigin} ${wsOrigin} ws: wss: https:`.trim(),
+  `upgrade-insecure-requests`,
+].join('; ')
+
 const nextConfig = {
   // Standalone output — required for Docker/Coolify deployment
   // Bundles only the necessary files for production (no node_modules copy)
   output: 'standalone',
 
+  reactStrictMode: true,
+  poweredByHeader: false,
+
+  // TypeScript: enforced. Build fails on type errors (no more silent drift).
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
+  },
+
+  // Next.js 16 infers the workspace root from the nearest lockfile.
+  // Pin it to this directory so a stray lockfile in the parent folder is ignored.
+  turbopack: {
+    root: process.cwd(),
   },
 
   images: {
-    unoptimized: true,
+    // Enable Next.js image optimizer in production for bandwidth & CLS wins.
+    // If you genuinely need external sources that the optimizer can't reach
+    // (e.g. behind-VPN assets), re-enable `unoptimized: true`.
+    unoptimized: false,
+    formats: ['image/avif', 'image/webp'],
     remotePatterns: [
-      { protocol: 'https', hostname: '**' },
-      { protocol: 'http', hostname: '**' },
+      // Evolution API QR base64 data URLs come inline, so no remote host needed.
+      // Add specific hostnames below when you have real external image sources.
+      // { protocol: 'https', hostname: 'cdn.yourdomain.com' },
     ],
   },
 
-  // Allow Replit preview, Windsurf browser preview, and VPS cross-origin HMR
-  allowedDevOrigins: [
-    '*.replit.dev',
-    '*.janeway.replit.dev',
-    'localhost',
-    '127.0.0.1',
-    '0.0.0.0',
-  ],
+  // Allow Windsurf browser preview and local hosts during dev.
+  allowedDevOrigins: ['localhost', '127.0.0.1', '0.0.0.0'],
 
   async headers() {
     return [
-      // HSTS for all pages
       {
         source: '/:path*',
         headers: [
@@ -36,15 +67,21 @@ const nextConfig = {
             key: 'Strict-Transport-Security',
             value: 'max-age=63072000; includeSubDomains; preload',
           },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+          { key: 'Content-Security-Policy', value: csp },
         ],
       },
-      // CORS for Next.js API routes — allows Go backend and Evolution API callbacks
+      // CORS for Next.js API routes — mirrors the Go backend's CORS policy.
+      // Use explicit origin only (never '*') when credentials are included.
       {
         source: '/api/:path*',
         headers: [
           {
             key: 'Access-Control-Allow-Origin',
-            value: process.env.FRONTEND_URL || '*',
+            value: process.env.FRONTEND_URL || 'http://localhost:5000',
           },
           {
             key: 'Access-Control-Allow-Methods',
