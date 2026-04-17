@@ -166,24 +166,24 @@ CREATE TABLE IF NOT EXISTS system_diagnoses (
 -- To generate new bcrypt hash: https://bcrypt.online or use Node.js bcrypt
 -- ---------------------------------------------------------------
 
--- Check if seeding is enabled via environment (for safety)
--- In production, set SEED_DEFAULT_USERS=false in your environment
+-- Bootstrap default users ONLY if users table is completely empty.
+-- Safe to run on fresh or existing databases — idempotent.
+-- After first login, CHANGE THE PASSWORD via UI/API or by direct UPDATE.
 DO $$
+DECLARE
+    user_count INTEGER;
 BEGIN
-    -- Only seed if explicitly enabled or in development
-    -- This check prevents accidental seeding in production
-    IF current_setting('app.seed_users', true) = 'true' 
-       OR current_setting('app.environment', true) = 'development' THEN
-        
+    SELECT COUNT(*) INTO user_count FROM users;
+
+    IF user_count = 0 THEN
         INSERT INTO users (email, password, role) VALUES
             ('admin@mantra.ai', '$2a$10$GNm/LleSefP5IS3.mbmNWuiHGOZGKTnDdEKrtdu/KBoZk.VO0XIby', 'SUPER_ADMIN'),
-            ('demo@mantra.ai',  '$2a$10$Id0AHtQpCETR7PChpQS08eQOjd65/zxuYeDEfy6If7Dc2tzZ1teuO', 'CLIENT_ADMIN')
-        ON CONFLICT (email) DO UPDATE
-            SET password = EXCLUDED.password,
-                role     = EXCLUDED.role;
-                
-        RAISE NOTICE 'Default users seeded (DEVELOPMENT ONLY)';
+            ('demo@mantra.ai',  '$2a$10$Id0AHtQpCETR7PChpQS08eQOjd65/zxuYeDEfy6If7Dc2tzZ1teuO', 'CLIENT_ADMIN');
+
+        RAISE NOTICE '[Mantra] Bootstrapped default users. CHANGE PASSWORDS immediately after first login!';
+        RAISE NOTICE '[Mantra]   admin@mantra.ai / MantraAdmin2024!  (SUPER_ADMIN)';
+        RAISE NOTICE '[Mantra]   demo@mantra.ai  / admin123           (CLIENT_ADMIN)';
     ELSE
-        RAISE NOTICE 'Skipping default user seeding (production mode)';
+        RAISE NOTICE '[Mantra] Users table already populated (% rows) — skipping bootstrap.', user_count;
     END IF;
 END $$;

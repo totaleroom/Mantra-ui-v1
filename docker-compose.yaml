@@ -29,7 +29,9 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ports:
-      - "5432:5432"
+      # Bind to localhost only — NOT exposed to public internet.
+      # SSH tunnel to access from laptop: ssh -L 5432:localhost:5432 user@vps
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mantra} -d ${POSTGRES_DB:-mantra_db}"]
       interval: 10s
@@ -58,7 +60,8 @@ services:
       --maxmemory 200mb
       --maxmemory-policy allkeys-lru
     volumes:
-      - redis_data:/data
+      # Bind to localhost only — NOT exposed to public internet.
+      - r127.0.0.1:edis_data:/data
     ports:
       - "6379:6379"
     healthcheck:
@@ -169,10 +172,13 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://43.157.223.29:3001}
-        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://43.157.223.29:3001}
-        NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:-http://43.157.223.29:3001}
-        NEXT_PUBLIC_EVO_URL: ${NEXT_PUBLIC_EVO_URL:-http://43.157.223.29:8082}
+        # These are baked into the client bundle at build time.
+        # For Coolify/VPS: set these to your public URLs (e.g. https://api.yourdomain.com)
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL is required (e.g. https://api.yourdomain.com)}
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:?NEXT_PUBLIC_WS_URL is required (e.g. wss://api.yourdomain.com)}
+        NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:-${NEXT_PUBLIC_API_URL}}
+        NEXT_PUBLIC_EVO_URL: ${NEXT_PUBLIC_EVO_URL:-http://evolution:8080}
+        NEXT_PUBLIC_BASE_URL: ${NEXT_PUBLIC_BASE_URL:-${FRONTEND_URL}}
     container_name: mantra_frontend
     restart: unless-stopped
     ports:
