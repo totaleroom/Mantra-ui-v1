@@ -101,7 +101,6 @@ export function QRCodeDialog({ instance, onClose }: QRCodeDialogProps) {
               {/* QR Code Image - Supports Base64, Responsive */}
               <div className="relative w-40 h-40 sm:w-48 sm:h-48 bg-white rounded-lg p-2 mb-3 sm:mb-4 overflow-hidden">
                 {qrCode.startsWith('data:image') ? (
-                  // Base64 QR Code from backend
                   <Image
                     src={qrCode}
                     alt="WhatsApp QR Code"
@@ -110,7 +109,6 @@ export function QRCodeDialog({ instance, onClose }: QRCodeDialogProps) {
                     unoptimized
                   />
                 ) : (
-                  // Raw base64 string (wrap it)
                   <Image
                     src={`data:image/png;base64,${qrCode}`}
                     alt="WhatsApp QR Code"

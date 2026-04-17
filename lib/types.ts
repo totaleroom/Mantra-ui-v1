@@ -2,6 +2,35 @@
 
 export type UserRole = 'SUPER_ADMIN' | 'CLIENT_ADMIN' | 'STAFF'
 export type InstanceStatus = 'CONNECTED' | 'CONNECTING' | 'DISCONNECTED' | 'ERROR'
+export type WhatsAppProviderType = 'WHATSAPP_WEB_JS'
+
+export interface WhatsAppWebJsConfig {
+  sessionName?: string
+  webhookUrl?: string | null
+  headless?: boolean
+  qrFormat?: 'data_url' | 'base64'
+  globalApiKey?: string
+  clientId?: string
+  sampleQrCode?: string
+}
+
+export type WhatsAppProviderConfig = WhatsAppWebJsConfig
+export type WhatsAppProviderConfigFieldKey = Exclude<keyof WhatsAppWebJsConfig, 'sampleQrCode'>
+
+export interface WhatsAppProviderDefinition {
+  type: WhatsAppProviderType
+  name: string
+  description: string
+  defaultConfig: WhatsAppProviderConfig
+  configFields: Array<{
+    key: WhatsAppProviderConfigFieldKey
+    label: string
+    type: 'text' | 'url' | 'password' | 'boolean' | 'select'
+    required?: boolean
+    placeholder?: string
+    options?: Array<{ label: string; value: string }>
+  }>
+}
 
 export interface User {
   id: number
@@ -47,6 +76,8 @@ export interface WhatsAppInstance {
   instanceName: string
   instanceApiKey: string | null
   webhookUrl: string | null
+  providerType: WhatsAppProviderType
+  providerConfig: WhatsAppProviderConfig
   status: InstanceStatus
   updatedAt: Date
 }

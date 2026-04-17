@@ -3,13 +3,14 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiClient } from '@/lib/api-client'
-import type { WhatsAppInstance } from '@/lib/types'
+import type { WhatsAppInstance, WhatsAppProviderDefinition } from '@/lib/types'
 import type { WhatsAppInstanceFormData } from '@/lib/validations'
 
 // Query Keys
 export const whatsappKeys = {
   all: ['whatsapp'] as const,
   instances: () => [...whatsappKeys.all, 'instances'] as const,
+  providers: () => [...whatsappKeys.all, 'providers'] as const,
   instance: (id: number) => [...whatsappKeys.all, 'instance', id] as const,
   qrCode: (instanceName: string) =>
     [...whatsappKeys.all, 'qr', instanceName] as const,
@@ -23,6 +24,14 @@ export function useWhatsAppInstances() {
     queryKey: whatsappKeys.instances(),
     queryFn: () => apiClient.get<WhatsAppInstance[]>('/api/whatsapp/instances'),
     refetchInterval: 30000, // Refresh every 30 seconds
+  })
+}
+
+export function useWhatsAppProviders() {
+  return useQuery({
+    queryKey: whatsappKeys.providers(),
+    queryFn: () => apiClient.get<WhatsAppProviderDefinition[]>('/api/whatsapp/providers'),
+    staleTime: 1000 * 60 * 30,
   })
 }
 
@@ -87,8 +96,9 @@ export function useQRCodeStream(instanceName: string | null) {
   const countdownRef = useRef<NodeJS.Timeout | null>(null)
   const queryClient = useQueryClient()
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
-  const WS_URL = API_URL.replace(/^http/, 'ws')
+  const WS_URL =
+    process.env.NEXT_PUBLIC_WS_URL ||
+    'ws://localhost:3001'
 
   const startCountdown = useCallback(() => {
     setCountdown(60)

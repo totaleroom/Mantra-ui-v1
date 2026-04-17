@@ -99,6 +99,9 @@ export function WhatsAppInstanceCard({
           <Badge variant="outline" className="text-xs bg-secondary">
             {clientName}
           </Badge>
+          <Badge variant="outline" className="text-xs bg-secondary">
+            {instance.providerType}
+          </Badge>
         </div>
         <div className="flex items-center gap-4 text-xs text-muted-foreground">
           {instance.instanceApiKey && (

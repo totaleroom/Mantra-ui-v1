@@ -14,23 +14,24 @@ import {
   ArrowUpRight,
   Circle,
 } from 'lucide-react'
-import {
-  mockClients,
-  mockWhatsAppInstances,
-  mockInboxMessages,
-  mockSystemDiagnosis,
-} from '@/lib/mock-data'
+import { useTenants } from '@/hooks/use-tenant'
+import { useWhatsAppInstances } from '@/hooks/use-whatsapp'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 
 export default function OverviewPage() {
-  const activeClients = mockClients.filter((c) => c.isActive).length
-  const connectedInstances = mockWhatsAppInstances.filter(
-    (i) => i.status === 'CONNECTED'
-  ).length
-  const totalMessages = mockInboxMessages.length
-  const healthyServices = mockSystemDiagnosis.filter(
-    (s) => s.status === 'healthy'
-  ).length
+  const { data: clients = [] } = useTenants()
+  const { data: instances = [] } = useWhatsAppInstances()
+  const [totalMessages, setTotalMessages] = useState(0)
+  const [healthyServices, setHealthyServices] = useState(0)
+
+  const activeClients = clients.filter((c) => c.isActive).length
+  const connectedInstances = instances.filter((i) => i.status === 'CONNECTED').length
+
+  useEffect(() => {
+    setTotalMessages(0)
+    setHealthyServices(0)
+  }, [])
 
   return (
     <DashboardLayout
@@ -50,25 +51,24 @@ export default function OverviewPage() {
           />
           <StatusCard
             title="WhatsApp Instances"
-            value={`${connectedInstances}/${mockWhatsAppInstances.length}`}
+            value={`${connectedInstances}/${instances.length}`}
             description="connected"
             icon={MessageSquare}
             status={connectedInstances === mockWhatsAppInstances.length ? 'success' : 'warning'}
           />
           <StatusCard
             title="Messages Today"
-            value={totalMessages * 127}
+            value={totalMessages}
             description="across all tenants"
             icon={Zap}
             status="info"
-            trend={{ value: 8.2, isPositive: true }}
           />
           <StatusCard
             title="System Health"
-            value={`${healthyServices}/${mockSystemDiagnosis.length}`}
+            value={`${healthyServices}/0`}
             description="services healthy"
             icon={Activity}
-            status={healthyServices === mockSystemDiagnosis.length ? 'success' : 'warning'}
+            status="warning"
           />
         </div>
 
@@ -85,52 +85,8 @@ export default function OverviewPage() {
             </CardHeader>
             <CardContent>
               <ScrollArea className="h-[300px] pr-4">
-                <div className="space-y-4">
-                  {mockInboxMessages.map((message) => (
-                    <div
-                      key={message.id}
-                      className="flex items-start gap-3 p-3 rounded-lg bg-secondary/50 hover:bg-secondary transition-colors"
-                    >
-                      <div
-                        className={`w-2 h-2 mt-2 rounded-full shrink-0 ${
-                          message.direction === 'inbound'
-                            ? 'bg-info'
-                            : 'bg-primary'
-                        }`}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1 flex-wrap">
-                          <span className="text-sm font-medium text-foreground">
-                            {message.clientName}
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            {message.customerNumber}
-                          </span>
-                          <Badge
-                            variant="outline"
-                            className="text-xs bg-secondary border-border"
-                          >
-                            {message.direction}
-                          </Badge>
-                        </div>
-                        <p className="text-sm text-muted-foreground line-clamp-2">
-                          {message.message}
-                        </p>
-                        {message.aiThoughtProcess && (
-                          <Badge
-                            variant="outline"
-                            className="mt-2 text-xs bg-accent/10 text-accent border-accent/20"
-                          >
-                            <Brain className="w-3 h-3 mr-1" />
-                            AI Reasoning Available
-                          </Badge>
-                        )}
-                      </div>
-                      <span className="text-xs text-muted-foreground whitespace-nowrap">
-                        {formatTimeAgo(message.timestamp)}
-                      </span>
-                    </div>
-                  ))}
+                <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
+                  No live messages available yet.
                 </div>
               </ScrollArea>
             </CardContent>
@@ -142,42 +98,9 @@ export default function OverviewPage() {
               <CardTitle className="text-base font-semibold">System Status</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {mockSystemDiagnosis.map((service) => (
-                <div
-                  key={service.id}
-                  className="flex items-center justify-between p-3 rounded-lg bg-secondary/50"
-                >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={`w-3 h-3 rounded-full ${
-                        service.status === 'healthy'
-                          ? 'bg-success'
-                          : service.status === 'degraded'
-                          ? 'bg-warning'
-                          : 'bg-error'
-                      }`}
-                    />
-                    <span className="text-sm font-medium">{service.serviceName}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">
-                      {service.latency}ms
-                    </span>
-                    <Badge
-                      variant="outline"
-                      className={`text-xs ${
-                        service.status === 'healthy'
-                          ? 'bg-success/10 text-success border-success/20'
-                          : service.status === 'degraded'
-                          ? 'bg-warning/10 text-warning border-warning/20'
-                          : 'bg-error/10 text-error border-error/20'
-                      }`}
-                    >
-                      {service.status}
-                    </Badge>
-                  </div>
-                </div>
-              ))}
+              <div className="flex items-center justify-center py-6 text-sm text-muted-foreground">
+                System health metrics will appear here once the monitoring API is connected.
+              </div>
 
               {/* Quick Actions */}
               <div className="pt-4 border-t border-border">
@@ -212,11 +135,11 @@ export default function OverviewPage() {
           </CardHeader>
           <CardContent>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-              {mockClients.map((client) => {
-                const instances = mockWhatsAppInstances.filter(
+              {clients.map((client) => {
+                const clientInstances = instances.filter(
                   (i) => i.clientId === client.id
                 )
-                const connectedCount = instances.filter(
+                const connectedCount = clientInstances.filter(
                   (i) => i.status === 'CONNECTED'
                 ).length
 

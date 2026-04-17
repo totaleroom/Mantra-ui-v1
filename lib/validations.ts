@@ -23,7 +23,16 @@ export const whatsappInstanceSchema = z.object({
       'Only lowercase letters, numbers, and hyphens allowed'
     ),
   clientId: z.number().int().positive('Client is required'),
+  providerType: z.enum(['WHATSAPP_WEB_JS']),
   webhookUrl: z.string().url('Must be a valid URL').nullable().optional(),
+  providerConfig: z.object({
+    sessionName: z.string().min(1).optional(),
+    webhookUrl: z.string().url('Must be a valid URL').nullable().optional(),
+    headless: z.boolean().optional(),
+    qrFormat: z.enum(['data_url', 'base64']).optional(),
+    globalApiKey: z.string().optional(),
+    clientId: z.string().optional(),
+  }).default({}),
 })
 
 export type WhatsAppInstanceFormData = z.infer<typeof whatsappInstanceSchema>

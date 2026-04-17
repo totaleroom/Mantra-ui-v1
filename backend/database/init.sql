@@ -20,6 +20,12 @@ EXCEPTION
     WHEN duplicate_object THEN NULL;
 END $$;
 
+DO $$ BEGIN
+    CREATE TYPE whatsapp_provider_type AS ENUM ('WHATSAPP_WEB_JS');
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;
+
 -- ---------------------------------------------------------------
 -- 1. USERS & AUTH
 -- ---------------------------------------------------------------
@@ -79,7 +85,7 @@ CREATE TABLE IF NOT EXISTS client_ai_configs (
 );
 
 -- ---------------------------------------------------------------
--- 5. WHATSAPP INSTANCES (EVOLUTION API BRIDGE)
+-- 5. WHATSAPP INSTANCES (MULTI-PROVIDER GATEWAY)
 -- ---------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS whatsapp_instances (
     id               BIGSERIAL PRIMARY KEY,
@@ -87,12 +93,15 @@ CREATE TABLE IF NOT EXISTS whatsapp_instances (
     instance_name    TEXT   NOT NULL UNIQUE,
     instance_api_key TEXT,
     webhook_url      TEXT,
+    provider_type    whatsapp_provider_type NOT NULL DEFAULT 'WHATSAPP_WEB_JS',
+    provider_config  JSONB NOT NULL DEFAULT '{}'::jsonb,
     status           instance_status NOT NULL DEFAULT 'DISCONNECTED',
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_whatsapp_instances_client_id     ON whatsapp_instances (client_id);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_instances_instance_name ON whatsapp_instances (instance_name);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_instances_provider_type ON whatsapp_instances (provider_type);
 
 -- ---------------------------------------------------------------
 -- 6. TRANSIENT CUSTOMER MEMORY (4-DAY TTL)
@@ -142,14 +151,39 @@ CREATE TABLE IF NOT EXISTS system_diagnoses (
 
 -- ---------------------------------------------------------------
 -- ---------------------------------------------------------------
--- Seed: default accounts (DEVELOPMENT ONLY — change passwords in production)
+-- Seed: default accounts (DEVELOPMENT ONLY — DO NOT USE IN PRODUCTION)
 -- ---------------------------------------------------------------
--- SUPER_ADMIN  →  admin@mantra.ai   /  MantraAdmin2024!
--- CLIENT_ADMIN →  demo@mantra.ai    /  admin123
+-- ⚠️  SECURITY WARNING: These are bcrypt hashes for default passwords.
+--     For production, either:
+--     1. Remove this seed data and create users via the API
+--     2. Replace with environment-variable-driven seeding
+--     3. Generate new hashes with strong, unique passwords
+--
+-- Default credentials (FOR DEV ONLY):
+--   SUPER_ADMIN  → admin@mantra.ai    / MantraAdmin2024!  (CHANGE THIS!)
+--   CLIENT_ADMIN → demo@mantra.ai     / admin123          (CHANGE THIS!)
+--
+-- To generate new bcrypt hash: https://bcrypt.online or use Node.js bcrypt
 -- ---------------------------------------------------------------
-INSERT INTO users (email, password, role) VALUES
-    ('admin@mantra.ai', '$2a$10$GNm/LleSefP5IS3.mbmNWuiHGOZGKTnDdEKrtdu/KBoZk.VO0XIby', 'SUPER_ADMIN'),
-    ('demo@mantra.ai',  '$2a$10$Id0AHtQpCETR7PChpQS08eQOjd65/zxuYeDEfy6If7Dc2tzZ1teuO', 'CLIENT_ADMIN')
-ON CONFLICT (email) DO UPDATE
-    SET password = EXCLUDED.password,
-        role     = EXCLUDED.role;
+
+-- Check if seeding is enabled via environment (for safety)
+-- In production, set SEED_DEFAULT_USERS=false in your environment
+DO $$
+BEGIN
+    -- Only seed if explicitly enabled or in development
+    -- This check prevents accidental seeding in production
+    IF current_setting('app.seed_users', true) = 'true' 
+       OR current_setting('app.environment', true) = 'development' THEN
+        
+        INSERT INTO users (email, password, role) VALUES
+            ('admin@mantra.ai', '$2a$10$GNm/LleSefP5IS3.mbmNWuiHGOZGKTnDdEKrtdu/KBoZk.VO0XIby', 'SUPER_ADMIN'),
+            ('demo@mantra.ai',  '$2a$10$Id0AHtQpCETR7PChpQS08eQOjd65/zxuYeDEfy6If7Dc2tzZ1teuO', 'CLIENT_ADMIN')
+        ON CONFLICT (email) DO UPDATE
+            SET password = EXCLUDED.password,
+                role     = EXCLUDED.role;
+                
+        RAISE NOTICE 'Default users seeded (DEVELOPMENT ONLY)';
+    ELSE
+        RAISE NOTICE 'Skipping default user seeding (production mode)';
+    END IF;
+END $$;

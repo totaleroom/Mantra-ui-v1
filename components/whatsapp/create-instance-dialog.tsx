@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { whatsappInstanceSchema, type WhatsAppInstanceFormData } from '@/lib/validations'
-import { useCreateWhatsAppInstance } from '@/hooks/use-whatsapp'
+import { useCreateWhatsAppInstance, useWhatsAppProviders } from '@/hooks/use-whatsapp'
 import { useTenants } from '@/hooks/use-tenant'
 import { toast } from 'sonner'
 import { Loader2 } from 'lucide-react'
@@ -38,6 +38,7 @@ export function CreateInstanceDialog({
 }: CreateInstanceDialogProps) {
   const createInstance = useCreateWhatsAppInstance()
   const { data: clients, isLoading: isLoadingClients } = useTenants()
+  const { data: providers = [] } = useWhatsAppProviders()
 
   const {
     register,
@@ -45,17 +46,31 @@ export function CreateInstanceDialog({
     control,
     watch,
     reset,
+    getValues,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<WhatsAppInstanceFormData>({
     resolver: zodResolver(whatsappInstanceSchema),
     defaultValues: {
       instanceName: '',
       clientId: 0,
+      providerType: 'WHATSAPP_WEB_JS',
       webhookUrl: null,
+      providerConfig: {
+        sessionName: '',
+        webhookUrl: null,
+        headless: true,
+        qrFormat: 'data_url',
+        globalApiKey: '',
+        clientId: '',
+      },
     },
   })
 
   const instanceName = watch('instanceName')
+  const providerType = watch('providerType')
+  const selectedProvider =
+    providers.find((provider) => provider.type === providerType) ?? providers[0]
 
   // Transform instance name to lowercase with hyphens
   const formattedName = instanceName
@@ -71,6 +86,16 @@ export function CreateInstanceDialog({
           .toLowerCase()
           .replace(/\s+/g, '-')
           .replace(/[^a-z0-9-]/g, ''),
+        providerConfig: {
+          ...data.providerConfig,
+          sessionName:
+            data.providerConfig.sessionName ||
+            data.instanceName
+              .toLowerCase()
+              .replace(/\s+/g, '-')
+              .replace(/[^a-z0-9-]/g, ''),
+          webhookUrl: data.providerConfig.webhookUrl || data.webhookUrl || null,
+        },
       })
       toast.success('WhatsApp instance created successfully')
       reset()
@@ -93,13 +118,23 @@ export function CreateInstanceDialog({
     }
   }, [open, reset])
 
+  useEffect(() => {
+    if (!selectedProvider) return
+
+    setValue('providerType', selectedProvider.type)
+    setValue('providerConfig', {
+      ...selectedProvider.defaultConfig,
+      ...getValues('providerConfig'),
+    })
+  }, [selectedProvider, getValues, setValue])
+
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
+    <Dialog open={open} onOpenChange={(nextOpen) => (nextOpen ? onOpenChange(true) : handleClose())}>
       <DialogContent className="sm:max-w-[425px] bg-card border-border">
         <DialogHeader>
           <DialogTitle>Create WhatsApp Instance</DialogTitle>
           <DialogDescription>
-            Set up a new Evolution API instance for a client.
+            Set up a provider-backed WhatsApp instance for a client.
           </DialogDescription>
         </DialogHeader>
 
@@ -149,6 +184,34 @@ export function CreateInstanceDialog({
             )}
           </div>
 
+          <div className="space-y-2">
+            <Label>WhatsApp Provider</Label>
+            <Controller
+              name="providerType"
+              control={control}
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger className="bg-secondary border-border">
+                    <SelectValue placeholder="Select a provider" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {providers.map((provider) => (
+                      <SelectItem key={provider.type} value={provider.type}>
+                        {provider.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+            {selectedProvider && (
+              <p className="text-xs text-muted-foreground">{selectedProvider.description}</p>
+            )}
+            {errors.providerType && (
+              <p className="text-xs text-error">{errors.providerType.message}</p>
+            )}
+          </div>
+
           {formattedName.length >= 3 && (
             <div className="p-3 rounded-lg bg-secondary/50 border border-border">
               <p className="text-xs text-muted-foreground mb-1">Preview</p>
@@ -168,6 +231,50 @@ export function CreateInstanceDialog({
               <p className="text-xs text-error">{errors.webhookUrl.message}</p>
             )}
           </div>
+
+          {selectedProvider?.configFields.map((field) => {
+            if (field.type === 'select') {
+              return (
+                <div key={field.key} className="space-y-2">
+                  <Label>{field.label}</Label>
+                  <Controller
+                    name={`providerConfig.${field.key}`}
+                    control={control}
+                    render={({ field: controllerField }) => (
+                      <Select
+                        value={String(controllerField.value ?? '')}
+                        onValueChange={controllerField.onChange}
+                      >
+                        <SelectTrigger className="bg-secondary border-border">
+                          <SelectValue placeholder={field.placeholder || `Select ${field.label}`} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {field.options?.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                </div>
+              )
+            }
+
+            return (
+              <div key={field.key} className="space-y-2">
+                <Label htmlFor={String(field.key)}>{field.label}</Label>
+                <Input
+                  id={String(field.key)}
+                  type={field.type === 'password' ? 'password' : field.type === 'url' ? 'url' : 'text'}
+                  placeholder={field.placeholder}
+                  {...register(`providerConfig.${field.key}`)}
+                  className="bg-secondary border-border"
+                />
+              </div>
+            )
+          })}
 
           <DialogFooter className="pt-4">
             <Button type="button" variant="outline" onClick={handleClose}>

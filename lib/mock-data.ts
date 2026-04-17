@@ -30,11 +30,11 @@ export const mockClientAIConfigs: ClientAIConfig[] = [
 ]
 
 export const mockWhatsAppInstances: WhatsAppInstance[] = [
-  { id: 1, clientId: 1, instanceName: 'acme-main', instanceApiKey: 'evo_***', webhookUrl: 'https://api.mantra.ai/webhook/acme', status: 'CONNECTED', updatedAt: new Date() },
-  { id: 2, clientId: 1, instanceName: 'acme-support', instanceApiKey: 'evo_***', webhookUrl: 'https://api.mantra.ai/webhook/acme-support', status: 'CONNECTED', updatedAt: new Date() },
-  { id: 3, clientId: 2, instanceName: 'techstart-wa', instanceApiKey: 'evo_***', webhookUrl: 'https://api.mantra.ai/webhook/techstart', status: 'DISCONNECTED', updatedAt: new Date() },
-  { id: 4, clientId: 3, instanceName: 'global-primary', instanceApiKey: null, webhookUrl: null, status: 'CONNECTING', updatedAt: new Date() },
-  { id: 5, clientId: 5, instanceName: 'enterprise-main', instanceApiKey: 'evo_***', webhookUrl: 'https://api.mantra.ai/webhook/enterprise', status: 'CONNECTED', updatedAt: new Date() },
+  { id: 1, clientId: 1, instanceName: 'acme-main', instanceApiKey: 'wawebjs_***', webhookUrl: 'https://api.mantra.ai/webhook/acme', providerType: 'WHATSAPP_WEB_JS', providerConfig: { sessionName: 'acme-main', headless: true, qrFormat: 'data_url' }, status: 'CONNECTED', updatedAt: new Date() },
+  { id: 2, clientId: 1, instanceName: 'acme-support', instanceApiKey: 'wawebjs_***', webhookUrl: 'https://api.mantra.ai/webhook/acme-support', providerType: 'WHATSAPP_WEB_JS', providerConfig: { sessionName: 'acme-support', headless: true, qrFormat: 'base64' }, status: 'CONNECTED', updatedAt: new Date() },
+  { id: 3, clientId: 2, instanceName: 'techstart-wa', instanceApiKey: 'wawebjs_***', webhookUrl: 'https://api.mantra.ai/webhook/techstart', providerType: 'WHATSAPP_WEB_JS', providerConfig: { sessionName: 'techstart-wa', headless: true, qrFormat: 'data_url' }, status: 'DISCONNECTED', updatedAt: new Date() },
+  { id: 4, clientId: 3, instanceName: 'global-primary', instanceApiKey: null, webhookUrl: null, providerType: 'WHATSAPP_WEB_JS', providerConfig: { sessionName: 'global-primary', headless: false, qrFormat: 'base64' }, status: 'CONNECTING', updatedAt: new Date() },
+  { id: 5, clientId: 5, instanceName: 'enterprise-main', instanceApiKey: 'wawebjs_***', webhookUrl: 'https://api.mantra.ai/webhook/enterprise', providerType: 'WHATSAPP_WEB_JS', providerConfig: { sessionName: 'enterprise-main', headless: true, qrFormat: 'data_url' }, status: 'CONNECTED', updatedAt: new Date() },
 ]
 
 export const mockSystemDiagnosis: SystemDiagnosis[] = [

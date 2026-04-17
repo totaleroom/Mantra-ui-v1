@@ -3,6 +3,7 @@ import { pgTable, serial, text, timestamp, integer, boolean, jsonb, pgEnum, deci
 // ENUMS
 export const userRoleEnum = pgEnum("user_role", ["SUPER_ADMIN", "CLIENT_ADMIN", "STAFF"]);
 export const instanceStatusEnum = pgEnum("instance_status", ["CONNECTED", "CONNECTING", "DISCONNECTED", "ERROR"]);
+export const whatsappProviderTypeEnum = pgEnum("whatsapp_provider_type", ["WHATSAPP_WEB_JS"]);
 
 // 1. USERS & AUTH
 export const users = pgTable("users", {
@@ -47,13 +48,15 @@ export const clientAiConfigs = pgTable("client_ai_configs", {
   memoryTtlDays: integer("memory_ttl_days").default(4),
 });
 
-// 5. WHATSAPP INSTANCES (EVOLUTION API BRIDGE)
+// 5. WHATSAPP INSTANCES (MULTI-PROVIDER GATEWAY)
 export const whatsappInstances = pgTable("whatsapp_instances", {
   id: serial("id").primaryKey(),
   clientId: integer("client_id").references(() => clients.id),
   instanceName: text("instance_name").unique().notNull(),
   instanceApiKey: text("instance_api_key"),
   webhookUrl: text("webhook_url"),
+  providerType: whatsappProviderTypeEnum("provider_type").default("WHATSAPP_WEB_JS").notNull(),
+  providerConfig: jsonb("provider_config").default({}),
   status: instanceStatusEnum("status").default("DISCONNECTED"),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

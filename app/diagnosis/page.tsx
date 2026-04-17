@@ -19,45 +19,8 @@ import {
   HardDrive,
   Wifi,
 } from 'lucide-react'
-import { mockSystemDiagnosis } from '@/lib/mock-data'
 import type { SystemDiagnosis } from '@/lib/types'
-
-// Extended diagnosis data
-const extendedDiagnosis: (SystemDiagnosis & {
-  description: string
-  metrics: { label: string; value: string; status: 'good' | 'warning' | 'error' }[]
-})[] = [
-  {
-    ...mockSystemDiagnosis[0],
-    description: 'Primary database for tenant data, AI configs, and message history',
-    metrics: [
-      { label: 'Connections', value: '24/100', status: 'good' },
-      { label: 'Query Time', value: '12ms', status: 'good' },
-      { label: 'Disk Usage', value: '45%', status: 'good' },
-      { label: 'Replication', value: 'Synced', status: 'good' },
-    ],
-  },
-  {
-    ...mockSystemDiagnosis[1],
-    description: 'In-memory cache for sessions, rate limiting, and customer memories',
-    metrics: [
-      { label: 'Memory', value: '2.1GB/8GB', status: 'good' },
-      { label: 'Hit Rate', value: '94.2%', status: 'good' },
-      { label: 'Connections', value: '156', status: 'good' },
-      { label: 'Keys', value: '12.4k', status: 'good' },
-    ],
-  },
-  {
-    ...mockSystemDiagnosis[2],
-    description: 'WhatsApp messaging gateway for all tenant instances',
-    metrics: [
-      { label: 'Instances', value: '5 active', status: 'good' },
-      { label: 'Response Time', value: '450ms', status: 'warning' },
-      { label: 'Queue Depth', value: '23', status: 'warning' },
-      { label: 'Uptime', value: '99.2%', status: 'good' },
-    ],
-  },
-]
+import { apiClient } from '@/lib/api-client'
 
 export default function DiagnosisPage() {
   const [services, setServices] = useState(extendedDiagnosis)
@@ -75,17 +38,28 @@ export default function DiagnosisPage() {
 
   const refreshServices = async () => {
     setIsRefreshing(true)
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1500))
-    setServices((prev) =>
-      prev.map((s) => ({
+    try {
+      const data = await apiClient.get<SystemDiagnosis[]>('/api/system/diagnosis')
+      const mapped = data.map((s) => ({
         ...s,
-        latency: s.latency + Math.floor(Math.random() * 20 - 10),
-        lastCheck: new Date(),
+        description:
+          s.serviceName === 'PostgreSQL'
+            ? 'Primary database for tenant data, AI configs, and message history'
+            : s.serviceName === 'Redis'
+            ? 'In-memory cache for sessions, rate limiting, and customer memories'
+            : 'WhatsApp messaging gateway and core automation runtime',
+        metrics: [
+          { label: 'Latency', value: `${s.latency}ms`, status: s.latency < 100 ? 'good' : s.latency < 500 ? 'warning' : 'error' },
+        ],
       }))
-    )
-    setLastRefresh(new Date())
-    setIsRefreshing(false)
+      setServices(mapped)
+      setLastRefresh(new Date())
+    } catch {
+      // Keep previous state but update timestamp
+      setLastRefresh(new Date())
+    } finally {
+      setIsRefreshing(false)
+    }
   }
 
   const healthyCount = services.filter((s) => s.status === 'healthy').length

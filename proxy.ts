@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { jwtVerify } from 'jose'
+import { serverConfig } from './lib/config'
 
 const SESSION_COOKIE = 'mantra_session'
 
@@ -11,7 +12,8 @@ const AUTH_REQUIRED = ['/', '/ai-hub', '/whatsapp', '/inbox', '/tenants', '/diag
 const PUBLIC_PATHS = ['/login', '/api/auth']
 
 function getJwtSecret(): Uint8Array {
-  return new TextEncoder().encode(process.env.JWT_SECRET || '')
+  const secret = serverConfig?.jwtSecret || process.env.JWT_SECRET || ''
+  return new TextEncoder().encode(secret)
 }
 
 interface SessionPayload {
@@ -22,7 +24,7 @@ interface SessionPayload {
 }
 
 async function decodeSession(token: string): Promise<SessionPayload | null> {
-  const secret = process.env.JWT_SECRET
+  const secret = serverConfig?.jwtSecret || process.env.JWT_SECRET
   if (!secret) return simpleDecodePayload(token)
 
   try {

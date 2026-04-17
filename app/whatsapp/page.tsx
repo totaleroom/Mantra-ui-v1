@@ -22,19 +22,23 @@ import {
   useWhatsAppInstances,
   useDeleteWhatsAppInstance,
   useDisconnectWhatsAppInstance,
+  useWhatsAppProviders,
 } from '@/hooks/use-whatsapp'
 import { useTenants } from '@/hooks/use-tenant'
 import { toast } from 'sonner'
 import type { WhatsAppInstance } from '@/lib/types'
+import Link from 'next/link'
 
 export default function WhatsAppPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [providerFilter, setProviderFilter] = useState<string>('all')
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [qrDialogInstance, setQrDialogInstance] = useState<WhatsAppInstance | null>(null)
 
   // Fetch data
   const { data: instances, isLoading, refetch } = useWhatsAppInstances()
+  const { data: providers = [] } = useWhatsAppProviders()
   const { data: clients } = useTenants()
   const deleteInstance = useDeleteWhatsAppInstance()
   const disconnectInstance = useDisconnectWhatsAppInstance()
@@ -48,9 +52,11 @@ export default function WhatsAppPage() {
         instance.instanceName.toLowerCase().includes(search.toLowerCase()) ||
         client?.name.toLowerCase().includes(search.toLowerCase())
       const matchesStatus = statusFilter === 'all' || instance.status === statusFilter
-      return matchesSearch && matchesStatus
+      const matchesProvider =
+        providerFilter === 'all' || instance.providerType === providerFilter
+      return matchesSearch && matchesStatus && matchesProvider
     })
-  }, [instances, clients, search, statusFilter])
+  }, [instances, clients, search, statusFilter, providerFilter])
 
   // Calculate stats
   const stats = useMemo(() => {
@@ -92,7 +98,7 @@ export default function WhatsAppPage() {
   return (
     <DashboardLayout
       title="WhatsApp Gateway"
-      description="Manage Evolution API instances for all tenants"
+      description="Manage multi-provider WhatsApp instances for all tenants"
     >
       <div className="space-y-6">
         {/* Stats */}
@@ -176,6 +182,19 @@ export default function WhatsAppPage() {
                   <SelectItem value="ERROR">Error</SelectItem>
                 </SelectContent>
               </Select>
+              <Select value={providerFilter} onValueChange={setProviderFilter}>
+                <SelectTrigger className="w-[220px] bg-secondary border-border">
+                  <SelectValue placeholder="Filter by provider" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Providers</SelectItem>
+                  {providers.map((provider) => (
+                    <SelectItem key={provider.type} value={provider.type}>
+                      {provider.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Button
                 variant="ghost"
                 size="icon"
@@ -183,6 +202,12 @@ export default function WhatsAppPage() {
                 className="shrink-0"
               >
                 <RefreshCw className="w-4 h-4" />
+              </Button>
+              <Button
+                asChild
+                variant="outline"
+              >
+                <Link href="/dashboard/providers">Manage Providers</Link>
               </Button>
               <Button
                 onClick={() => setIsCreateDialogOpen(true)}

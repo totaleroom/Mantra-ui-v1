@@ -1,6 +1,6 @@
 import { jwtVerify, type JWTPayload } from 'jose'
 import { cookies } from 'next/headers'
-import { publicConfig } from './config'
+import { publicConfig, serverConfig } from './config'
 
 export const SESSION_COOKIE = 'mantra_session'
 
@@ -13,7 +13,7 @@ export interface MantraSession {
 }
 
 function getJwtSecret(): Uint8Array {
-  const secret = process.env.JWT_SECRET
+  const secret = serverConfig?.jwtSecret
   if (!secret) {
     throw new Error('[Auth] JWT_SECRET environment variable is not set')
   }
@@ -55,9 +55,8 @@ export async function callLoginAPI(email: string, password: string): Promise<Log
   // Prefer BACKEND_INTERNAL_URL for server-to-server calls (docker network / VPS internal)
   // Fall back to NEXT_PUBLIC_API_URL for dev environments
   const apiUrl =
-    process.env.BACKEND_INTERNAL_URL ||
-    process.env.NEXT_PUBLIC_API_URL ||
-    'http://localhost:3001'
+    serverConfig?.backendInternalUrl ||
+    publicConfig.apiUrl
 
   let res: Response
   try {

@@ -39,14 +39,16 @@ import {
 } from 'lucide-react'
 import { useTenants } from '@/hooks/use-tenant'
 import { sanitizeMessage } from '@/lib/sanitize'
+import { useWhatsAppInstances } from '@/hooks/use-whatsapp'
+import type { Client } from '@/lib/types'
 
 export default function TenantsPage() {
   const [search, setSearch] = useState('')
   const { data: tenants, isLoading } = useTenants()
+  const { data: instances = [] } = useWhatsAppInstances()
 
-  const clients = tenants?.clients || []
-  const instances = tenants?.instances || []
-  const configs = tenants?.configs || []
+  const clients: Client[] = tenants || []
+  const configs: { clientId: number; modelId: string; temperature: number }[] = []
 
   const filteredClients = clients.filter((client) =>
     client.name.toLowerCase().includes(search.toLowerCase())

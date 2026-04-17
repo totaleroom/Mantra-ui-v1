@@ -43,12 +43,10 @@ const clientSchema = z.object({
   // These are bundled into the browser — must use NEXT_PUBLIC_ prefix
   NEXT_PUBLIC_API_URL: z
     .string()
-    .url('NEXT_PUBLIC_API_URL must be a valid URL')
-    .default('http://localhost:3001'),
+    .optional(),
   NEXT_PUBLIC_WS_URL: z
     .string()
-    .url('NEXT_PUBLIC_WS_URL must be a valid URL')
-    .default('ws://localhost:3001'),
+    .optional(),
   NEXT_PUBLIC_BACKEND_URL: z
     .string()
     .url()
