@@ -1,42 +1,63 @@
-# AI Agent Operational Brief — Mantra AI
+# AI Agent Operational Brief — Mantra AI (TL;DR)
 
 > **For:** Claude Code, Hermes, Cursor, Windsurf Cascade, or any autonomous coding/deploy agent.  
-> **Purpose:** One document to orient yourself, validate context, and deploy without a back-and-forth.
+> **Purpose:** 2-minute orientation. Then hand off to the deeper docs.
+>
+> ⚠️ **If you just cloned the repo from GitHub, read
+> [`.agent/00-START-HERE.md`](./.agent/00-START-HERE.md) instead of this
+> file.** That has a step-by-step bootstrap. This brief is meta-level
+> context for anyone who already knows what Mantra *is*.
 
 ---
 
 ## Your mission
 
-Deploy **Mantra AI** (multi-tenant WhatsApp automation SaaS) or help the operator reason about it. Typical user prompts look like:
+Continue building / deploying **Mantra AI** (multi-tenant WhatsApp automation SaaS).
+
+Typical user prompts:
 
 > *"Deploy Mantra to my VPS at X.X.X.X"*  
 > *"The login page is broken — fix it"*  
-> *"Add a new API endpoint for ..."*
+> *"Add a new API endpoint for …"*  
+> *"Implement Phase 5 (tiered model routing)"*
 
 Everything you need is in this repo. No hidden context.
+
+## Current project status (as of last commit)
+
+| Phase | Status |
+|-------|--------|
+| 0. Baseline (Next.js + Go + Postgres + Redis + Evolution) | ✅ shipped |
+| 1. Visual polish (Apple × Nothing OS) | 🟡 Tier 1 done, per-page audit pending |
+| 2. Knowledge Base (pgvector chunks + FAQs + UI) | ✅ shipped |
+| 3. RAG integration to orchestrator | ✅ shipped |
+| 4. Tool calling (function calling + webhook/builtin handlers) | ✅ shipped |
+| 5. Tiered model routing (cheap → escalate) | ⚪ planned |
+| 6. Production hardening (rate limit, logs, backups, handoff) | ⚪ planned |
+
+Always cross-check against [`.agent/10-commercial-mvp-roadmap.md`](./.agent/10-commercial-mvp-roadmap.md) and the top entry of [`.agent/07-task-log.md`](./.agent/07-task-log.md).
 
 ---
 
 ## 📚 Reading order (triage first, don't dump everything)
 
-> **⚠️ Start here first:** [`.agent/README.md`](./.agent/README.md) — a
-> purpose-built skill pack with mission, architecture mental model, codebase
-> map, conventions, runbooks, gotchas, verification rituals, and an
-> append-only task log from previous agents. Read `.agent/` end-to-end
-> before touching anything else. It supersedes the older brief below for
-> code-level work.
+> **⚠️ Start here first:** [`.agent/00-START-HERE.md`](./.agent/00-START-HERE.md)
+> for the 10-minute bootstrap, then [`.agent/README.md`](./.agent/README.md)
+> to see the full skill-pack index. Together these supersede the brief below
+> for code-level work.
 
 | Priority | File | When to read |
 |:-:|------|--------------|
-| 0 | `.agent/` (whole directory, 7 files) | **Always, first.** Contains distilled operating knowledge. |
+| 0 | `.agent/` (12 files incl. `00-START-HERE.md`) | **Always, first.** Contains distilled operating knowledge + phase roadmap + task log. |
 | 1 | `CREDENTIALS.md` | **If deploying.** Plaintext registry — gitignored. Contains every secret needed. |
-| 2 | `ARCHITECTURE.md` | Always skim — system topology, env var matrix, data flow. |
-| 3 | `DEPLOY_COOLIFY.md` | **If deploying to VPS.** Authoritative deploy procedure. |
-| 4 | `DEVELOPMENT.md` | If running locally / debugging. |
-| 5 | `docker-compose.yaml` | Service orchestration (5 containers). |
-| 6 | `.env.example` | Environment variable contract. |
-| 7 | `docs/api-contract.md` | If touching API surface. |
-| 8 | `docs/database-schema.md` | If touching DB. |
+| 2 | `ARCHITECTURE.md` | Always skim — system topology, env var matrix, data flow (incl. RAG + tool flow). |
+| 3 | `DEPLOY_COOLIFY.md` (generic) or `.agent/09-single-user-deployment.md` (our actual Tailscale + Coolify setup) | **If deploying to VPS.** |
+| 4 | `.agent/11-phase-2-4-deploy-smoke-test.md` | **After every deploy** — 9-step runbook proving KB + RAG + tools work. |
+| 5 | `DEVELOPMENT.md` | If running locally / debugging. |
+| 6 | `docker-compose.yaml` | Service orchestration (5 containers). Uses `pgvector/pgvector:pg15`. |
+| 7 | `.env.example` | Environment variable contract. |
+| 8 | `docs/api-contract.md` | If touching API surface. Updated with Phase 2 (Knowledge Base) + Phase 4 (Client Tools) endpoints. |
+| 9 | `docs/database-schema.md` | If touching DB. 11 tables post-Phase-4 (3 new: `client_knowledge_chunks`, `client_faqs`, `client_tools`). |
 
 Do **not** re-read everything for every turn. Cache in your working memory.
 
@@ -101,29 +122,20 @@ openssl rand -base64 32     # → HERMES_AUTH_TOKEN
 
 ## 🗺️ Architecture at a glance
 
-```
-                        ┌───────────────────┐
-                        │  Coolify/Traefik  │  (HTTPS, Let's Encrypt)
-                        └─────┬──────┬──────┘
-                              │      │
-              app.domain ─────┘      └───── api.domain
-                    │                          │
-                    ▼                          ▼
-           ┌──────────────┐           ┌──────────────┐
-           │ Next.js :5000│──────────▶│ Go Fiber :3001│
-           │   (frontend) │  REST+WS  │   (backend)   │
-           └──────────────┘           └───┬──────────┘
-                                          │
-                  ┌───────────────────────┼───────────────────────┐
-                  ▼                       ▼                       ▼
-           ┌────────────┐         ┌────────────┐         ┌──────────────┐
-           │ Postgres 15│         │  Redis 7   │         │ Evolution API │
-           │   :5432    │         │   :6379    │         │    :8080      │
-           │ (127.0.0.1)│         │ (127.0.0.1)│         │  (internal)   │
-           └────────────┘         └────────────┘         └──────────────┘
-```
+Five services on one VPS, orchestrated by Coolify + Traefik:
+**Next.js frontend (5000)** → **Go Fiber backend (3001)** → Postgres 15 +
+**pgvector** (5432, loopback) / Redis 7 (6379, loopback) / Evolution API
+(8080, container-internal).
 
-Ports 5432 and 6379 are bound to loopback (see `docker-compose.yaml`) — not publicly exposed. Only 80/443 (via Coolify) and 22 (SSH) should be open on the VPS firewall.
+The backend also calls external AI providers (OpenAI / Groq / OpenRouter)
+and, for Phase 4 tool calling, the tenant's own webhook URL when the LLM
+invokes a webhook-handler tool.
+
+**Diagrams live in:**
+- [`ARCHITECTURE.md`](./ARCHITECTURE.md) § 3 — service architecture + 5.5 RAG flow + 5.6 tool flow.
+- [`.agent/01-architecture.md`](./.agent/01-architecture.md) — opinionated message-flow for AI agents.
+
+Ports 5432 and 6379 are bound to loopback (see `docker-compose.yaml`) — not publicly exposed. Only 80/443 (via Coolify) and 22 (SSH) should be open on the VPS firewall. For the actual Tailscale-private topology we use in production, see `.agent/09-single-user-deployment.md`.
 
 ---
 
@@ -165,29 +177,34 @@ Report back to the user with:
 
 ## 🧭 Codebase quick map
 
-### Frontend (Next.js 14 App Router)
-```
-app/                   route handlers / pages
-├── layout.tsx         providers + root shell
-├── login/             login server action + page
-├── page.tsx           dashboard overview
-├── inbox/             WebSocket-backed live inbox
-├── whatsapp/          WA instances + QR
-├── ai-hub/            AI provider CRUD
-├── tenants/           tenant mgmt
-├── diagnosis/         SUPER_ADMIN only
-├── settings/          SUPER_ADMIN only
-└── dashboard/providers/  per-tenant WA provider settings
+Detailed reverse index lives in
+[`.agent/02-codebase-map.md`](./.agent/02-codebase-map.md). Highlights:
 
-components/            shadcn/ui + feature components
-hooks/                 data + session hooks
+### Frontend (Next.js 16 App Router)
+```
+app/                            route handlers / pages
+├── layout.tsx                  providers + root shell
+├── login/                      login server action + page
+├── inbox/                      WebSocket-backed live inbox
+├── whatsapp/                   WA instances + QR
+├── ai-hub/                     AI provider CRUD
+├── tenants/
+│   └── [id]/
+│       ├── page.tsx            tenant detail + AI config
+│       ├── knowledge/page.tsx  ★ Phase 2 — chunks + FAQs UI
+│       └── tools/page.tsx      ★ Phase 4 — tool registry UI
+├── diagnosis/                  SUPER_ADMIN only
+└── settings/                   SUPER_ADMIN only
+
+hooks/                 use-whatsapp, use-inbox-live, use-session,
+                       use-knowledge (Phase 2), use-tools (Phase 4), …
 lib/
 ├── config.ts          ★ single source for env (serverConfig / clientConfig)
 ├── env.ts             Zod validation
 ├── auth.ts            JWT issue/verify + dev bypass
 ├── api-client.ts      typed fetch wrapper
 └── sanitize.ts        XSS guard (DOMPurify)
-proxy.ts               middleware: JWT + RBAC + security headers
+middleware.ts          JWT + RBAC + security headers
 ```
 
 ### Backend (Go Fiber)
@@ -198,14 +215,23 @@ backend/
 ├── database/
 │   ├── postgres.go    GORM connection + auto-migrate
 │   ├── redis.go       graceful Redis client
-│   └── init.sql       DDL source of truth (idempotent)
-├── handlers/          auth, ai_providers, whatsapp, inbox, clients, system
+│   └── init.sql       DDL source of truth (11 tables, idempotent, includes pgvector)
+├── models/
+│   ├── models.go      core GORM models + AutoMigrate registry
+│   ├── knowledge.go   ★ Phase 2 — KnowledgeChunk, FAQ, JSONB alias
+│   └── tool.go        ★ Phase 4 — ClientTool + HandlerType* constants
+├── handlers/          auth, ai, whatsapp, inbox, clients, system,
+│                      knowledge (Phase 2), tools (Phase 4)
 ├── middleware/auth.go JWT + RBAC
-├── routes/routes.go   all route wiring
+├── routes/routes.go   all route wiring (Phase 2/4 endpoints inside clients group)
 ├── services/
-│   ├── ai_fallback.go priority-sorted LLM chain
+│   ├── ai_fallback.go priority-sorted LLM chain; Chat + ChatWithTools (Phase 4)
 │   ├── evolution.go   Evolution API HTTP client
-│   └── memory.go      Redis + Postgres 4-day TTL memory
+│   ├── memory.go      Redis + Postgres 4-day TTL memory
+│   ├── embedding.go   ★ Phase 2 — OpenAI-compat embedding client (text-embedding-3-small)
+│   ├── retrieval.go   ★ Phase 3 — RAG: FAQ keyword + pgvector ANN
+│   ├── tools.go       ★ Phase 4 — ToolService (builtin + webhook, SSRF-mitigated)
+│   └── orchestrator.go HandleInbound + buildConversation + runReplyLoop
 └── ws/                inbox live + QR WebSocket hubs
 ```
 

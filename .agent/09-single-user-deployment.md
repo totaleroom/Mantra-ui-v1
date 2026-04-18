@@ -128,7 +128,7 @@ STAMP=$(date +%Y%m%d_%H%M%S)
 DEST=/var/backups/mantra
 mkdir -p "$DEST"
 docker compose -f /opt/mantra/docker-compose.yaml exec -T postgres \
-  pg_dump -U mantra mantra | gzip > "$DEST/mantra_$STAMP.sql.gz"
+  pg_dump -U mantra mantra_db | gzip > "$DEST/mantra_$STAMP.sql.gz"
 # Keep 14 days
 find "$DEST" -name "mantra_*.sql.gz" -mtime +14 -delete
 ```

@@ -1,8 +1,9 @@
 # Mantra AI — Agentic WhatsApp SaaS
 
 > Multi-tenant platform for AI-powered WhatsApp automation, built for UMKM scale.  
-> **Stack:** Next.js 14 · Go Fiber · PostgreSQL 15 · Redis 7 · Evolution API  
-> **Target deploy:** Debian 12 VPS via Coolify (self-hosted, full stack in one box)
+> **Stack:** Next.js 16 · Go Fiber · PostgreSQL 15 + pgvector · Redis 7 · Evolution API  
+> **Target deploy:** Debian 12 VPS via Coolify (self-hosted, full stack in one box)  
+> **Status:** Phases 0–4 shipped (baseline + Knowledge Base + RAG + Tool Calling). See `.agent/10-commercial-mvp-roadmap.md`.
 
 ---
 
@@ -11,7 +12,9 @@
 - **Inbox** — Live WhatsApp conversations streamed via WebSocket, with manual reply composer
 - **AI Hub** — Multi-provider LLM fallback chain (OpenAI / Groq / OpenRouter)
 - **WhatsApp Gateway** — Evolution API instances, QR connect, webhook ingestion
-- **Auto-reply** — Inbound message → client system prompt + memory → AI fallback chain → outbound WhatsApp reply, all persisted + streamed live to the dashboard
+- **Auto-reply** — Inbound message → client system prompt + memory → **RAG retrieval** → **AI tool loop** → outbound WhatsApp reply, all persisted + streamed live to the dashboard
+- **Knowledge Base (Phase 2)** — Per-tenant document chunks (pgvector 1536-dim) + structured FAQs with tags/keywords. Upload via dashboard, auto-embedded, semantic-searched per inbound message.
+- **Tool Calling (Phase 4)** — Per-tenant function registry the AI can invoke mid-conversation. Builtin handlers (Go funcs) or **webhook tools** (tenant HTTP endpoint). Max 3 iterations per message, audit-logged.
 - **Tenants** — Multi-tenant isolation with per-tenant AI persona & token quota
 - **Diagnosis** — Live health checks + AI-powered repair recommendations
 - **RBAC** — `SUPER_ADMIN` / `CLIENT_ADMIN` / `STAFF` with middleware route protection
@@ -39,13 +42,22 @@ backend/services/orchestrator.go · HandleInbound
     │    idempotency guard on provider msg ID
     │ 5. Persists inbound InboxMessage (→ WebSocket broadcast)
     │ 6. Loads ClientAIConfig + CustomerMemory (last 10 turns)
-    │ 7. Calls AIFallbackService.Chat (priority chain with failover)
-    │ 8. EvolutionService.SendText → actual WhatsApp reply
-    │ 9. Persists outbound InboxMessage (→ WebSocket broadcast)
-    │10. Upserts CustomerMemory with new turn, bumps token counter
+    │ 7. buildConversation — runs **RAG retrieval** (Phase 3):
+    │     FAQ keyword match + top-K pgvector ANN → [KNOWLEDGE] block
+    │     appended to system prompt
+    │ 8. runReplyLoop — **tool-calling loop** (Phase 4, ≤ 3 iters):
+    │     ChatWithTools → dispatch tool_calls via ToolService →
+    │     builtin Go func OR webhook POST → feed result back → repeat
+    │ 9. EvolutionService.SendText → actual WhatsApp reply
+    │10. Persists outbound InboxMessage with audit JSON in
+    │    ai_thought_process (retrievedFaqs, retrievedChunks, toolCalls)
+    │    → WebSocket broadcast
+    │11. Upserts CustomerMemory with new turn, bumps token counter
     ▼
 Dashboard
    Inbox page renders both messages live via /api/inbox/live WS.
+   ThoughtProcessPanel shows the audit JSON (what the AI retrieved +
+   which tools it called).
 ```
 
 Manual reply flow: dashboard `ReplyComposer` → `POST /api/whatsapp/instances/:id/send` →
@@ -119,12 +131,13 @@ Full walkthrough → [`DEPLOY_COOLIFY.md`](./DEPLOY_COOLIFY.md)
 |----------|-----------|
 | **Just exploring** | this README |
 | **Local dev / new contributor** | [`DEVELOPMENT.md`](./DEVELOPMENT.md) |
-| **System understanding** | [`ARCHITECTURE.md`](./ARCHITECTURE.md) |
-| **Deploying to VPS** | [`DEPLOY_COOLIFY.md`](./DEPLOY_COOLIFY.md) |
+| **System understanding** | [`ARCHITECTURE.md`](./ARCHITECTURE.md) (post-Phase-4, includes RAG + tool flow) |
+| **Deploying to VPS** | [`DEPLOY_COOLIFY.md`](./DEPLOY_COOLIFY.md) (generic) · [`.agent/09-single-user-deployment.md`](./.agent/09-single-user-deployment.md) (Tailscale private) |
+| **Post-deploy verification** | [`.agent/11-phase-2-4-deploy-smoke-test.md`](./.agent/11-phase-2-4-deploy-smoke-test.md) — 9-step runbook |
 | **Backend API work** | [`docs/api-contract.md`](./docs/api-contract.md) |
 | **Database work** | [`docs/database-schema.md`](./docs/database-schema.md) |
-| **Product scope** | [`docs/PRD.md`](./docs/PRD.md) |
-| **Autonomous AI agent** | [`.agent/README.md`](./.agent/README.md) (skill pack) + [`AI_AGENT_BRIEF.md`](./AI_AGENT_BRIEF.md) + `CREDENTIALS.md` (gitignored) |
+| **Product scope & roadmap** | [`docs/PRD.md`](./docs/PRD.md) · [`.agent/10-commercial-mvp-roadmap.md`](./.agent/10-commercial-mvp-roadmap.md) |
+| **AI agent picking up from GitHub** | **[`.agent/00-START-HERE.md`](./.agent/00-START-HERE.md)** ← read first · then [`.agent/README.md`](./.agent/README.md) (skill pack) · [`AI_AGENT_BRIEF.md`](./AI_AGENT_BRIEF.md) (TL;DR) · `CREDENTIALS.md` (gitignored, only if deploying) |
 
 ---
 
@@ -132,23 +145,26 @@ Full walkthrough → [`DEPLOY_COOLIFY.md`](./DEPLOY_COOLIFY.md)
 
 ```
 mantra-ui-v1/
-├── .agent/               AI skill pack — any agent continuing this project reads this first
+├── .agent/               AI skill pack — any agent continuing this project reads 00-START-HERE.md first
 ├── app/                  Next.js 16 App Router pages
-├── components/           React components (shadcn/ui)
-├── hooks/                Data + session hooks
+│   └── tenants/[id]/     tenant detail + knowledge/  +  tools/  sub-pages (Phase 2 + 4 UI)
+├── components/           React components (shadcn/ui, inbox, dashboard shell)
+├── hooks/                use-whatsapp, use-inbox-live, use-knowledge (Phase 2), use-tools (Phase 4), …
 ├── lib/                  api-client, config, env (Zod), auth, sanitize
 ├── backend/              Go Fiber API
 │   ├── main.go           entry + /health + graceful shutdown
 │   ├── config/           env loading & validation
-│   ├── database/         postgres.go, redis.go, init.sql (DDL)
-│   ├── models/           GORM models
-│   ├── handlers/         HTTP handlers (auth, ai, whatsapp, inbox, …)
+│   ├── database/         postgres.go, redis.go, init.sql (11-table DDL incl. pgvector)
+│   ├── models/           models.go + knowledge.go (Phase 2) + tool.go (Phase 4), all GORM
+│   ├── handlers/         auth, ai, whatsapp, inbox, clients, knowledge (Phase 2), tools (Phase 4), …
 │   ├── middleware/       JWT auth + RBAC
 │   ├── routes/           route registration
-│   ├── services/         ai_fallback, evolution, memory
+│   ├── services/         ai_fallback (+ ChatWithTools), evolution, memory,
+│   │                     embedding (Phase 2), retrieval (Phase 3), tools (Phase 4),
+│   │                     orchestrator (runReplyLoop for tool calling)
 │   └── ws/               WebSocket hubs (inbox live, QR stream)
-├── docs/                 api-contract, database-schema, PRD
-├── docker-compose.yaml   Full stack orchestration
+├── docs/                 api-contract, database-schema, schema.ts (Drizzle), PRD
+├── docker-compose.yaml   Full stack orchestration (uses pgvector/pgvector:pg15)
 ├── .env.example          All environment variables (grouped & documented)
 ├── ARCHITECTURE.md       System architecture reference
 ├── DEPLOY_COOLIFY.md     VPS + Coolify deployment guide
@@ -201,6 +217,11 @@ Validation is Zod (`lib/env.ts`) on the frontend side and explicit checks on the
 Run this **once** after your first deploy to prove every layer of the
 auto-reply pipeline actually works. Each step has a clear failure signature
 so you know exactly which component to look at if something breaks.
+
+> **Verifying Phase 2–4 features specifically?** Use the dedicated 9-step
+> runbook at [`.agent/11-phase-2-4-deploy-smoke-test.md`](./.agent/11-phase-2-4-deploy-smoke-test.md)
+> — covers pgvector extension, KB upload, FAQ creation, RAG in the
+> orchestrator, webhook tool, builtin tool, and sign-off checklist.
 
 ```bash
 # 1. Backend reachable + DB + Redis healthy

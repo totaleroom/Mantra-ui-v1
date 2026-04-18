@@ -80,3 +80,53 @@ export const systemDiagnosis = pgTable("system_diagnosis", {
   latency: integer("latency"), // in ms
   lastCheck: timestamp("last_check").defaultNow(),
 });
+
+// 8. CLIENT KNOWLEDGE CHUNKS (Phase 2 — RAG)
+// NOTE: embedding is a pgvector(1536) column; Drizzle doesn't have a
+// first-class helper for it. Declared as jsonb here for TS typing only;
+// the actual DDL in backend/database/init.sql uses `vector(1536)`.
+// Swap to the pgvector Drizzle adapter if/when added to the project.
+export const clientKnowledgeChunks = pgTable("client_knowledge_chunks", {
+  id: serial("id").primaryKey(),
+  clientId: integer("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  content: text("content").notNull(),
+  embedding: jsonb("embedding"), // pgvector(1536) in DDL
+  source: text("source"),        // e.g. 'manual-paste', 'product-catalog.pdf'
+  category: text("category"),    // e.g. 'shipping', 'pricing'
+  metadata: jsonb("metadata").default({}).notNull(),
+  tokenCount: integer("token_count"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// 9. CLIENT FAQS (Phase 2)
+export const clientFaqs = pgTable("client_faqs", {
+  id: serial("id").primaryKey(),
+  clientId: integer("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  question: text("question").notNull(),
+  answer: text("answer").notNull(),
+  tags: jsonb("tags").default([]).notNull(),                      // string[]
+  priority: integer("priority").default(0).notNull(),              // higher = shown first
+  isActive: boolean("is_active").default(true).notNull(),
+  triggerKeywords: jsonb("trigger_keywords").default([]).notNull(),// string[]
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// 10. CLIENT TOOLS (Phase 4 — AI function calling)
+// handler_type: 'builtin' (Go func via handlerConfig.name) or 'webhook'
+// (POST to handlerConfig.url with optional X-Mantra-Secret). See
+// backend/services/tools.go and docs/api-contract.md § Client Tools.
+export const clientTools = pgTable("client_tools", {
+  id: serial("id").primaryKey(),
+  clientId: integer("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),                        // snake_case, UNIQUE (client_id, name)
+  description: text("description").notNull(),          // LLM reads this
+  parametersSchema: jsonb("parameters_schema").default({}).notNull(), // JSON Schema
+  handlerType: text("handler_type").default("webhook").notNull(),     // 'builtin' | 'webhook'
+  handlerConfig: jsonb("handler_config").default({}).notNull(),       // {name} | {url, secret?}
+  isActive: boolean("is_active").default(true).notNull(),
+  timeoutMs: integer("timeout_ms").default(8000).notNull(),           // 1000–30000
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});

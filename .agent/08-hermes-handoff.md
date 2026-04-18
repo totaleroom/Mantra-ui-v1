@@ -138,7 +138,7 @@ docker compose -f /opt/mantra/docker-compose.yaml logs --tail=100 backend
 curl -sS http://localhost:3001/health | jq
 
 # Count messages processed today
-docker compose exec postgres psql -U mantra -d mantra -c \
+docker compose exec postgres psql -U mantra -d mantra_db -c \
   "SELECT direction, count(*) FROM inbox_messages
    WHERE timestamp >= CURRENT_DATE GROUP BY direction;"
 
@@ -146,9 +146,9 @@ docker compose exec postgres psql -U mantra -d mantra -c \
 docker compose logs backend --since 1m | grep -c "inbox.*subscribed"
 
 # Which AI provider was last used
-docker compose exec postgres psql -U mantra -d mantra -c \
-  "SELECT name, last_used_at, last_error FROM ai_providers
-   ORDER BY last_used_at DESC LIMIT 5;"
+docker compose exec postgres psql -U mantra -d mantra_db -c \
+  "SELECT provider_name, updated_at, last_error FROM ai_providers
+   ORDER BY updated_at DESC LIMIT 5;"
 ```
 
 ---

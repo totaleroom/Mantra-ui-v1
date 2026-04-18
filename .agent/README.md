@@ -4,6 +4,9 @@
 > written for you. Read it in the order below before touching code. The human
 > operator expects you to already know what's here.
 
+> **Fresh clone from GitHub?** Start with `00-START-HERE.md` for a 10-minute
+> bootstrap. That file points you back here once you've got your bearings.
+
 ---
 
 ## Mission (copy this into your working memory)
@@ -11,11 +14,12 @@
 Mantra AI is a **multi-tenant SaaS for AI-powered WhatsApp automation**,
 targeted at Indonesian UMKM (small businesses). One VPS self-hosts the whole
 stack via Coolify. MVP scope is **1–5 concurrent tenants** doing real customer
-service via WhatsApp with AI auto-reply.
+service via WhatsApp with AI auto-reply, enriched by a **per-tenant knowledge
+base** (RAG) and **function-calling tools** (webhook or builtin).
 
 **Success = a shopkeeper connects WhatsApp via QR, writes a system prompt once,
-and customers chatting their business number get AI replies within seconds —
-all visible live on the dashboard.**
+uploads an FAQ, and customers chatting their business number get AI replies
+grounded in the tenant's data — all visible live on the dashboard.**
 
 ---
 
@@ -23,6 +27,7 @@ all visible live on the dashboard.**
 
 | # | File | Why |
 |---|------|-----|
+| 0 | `00-START-HERE.md` | **First read** if you just cloned from GitHub. 10-minute bootstrap + handshake procedure. |
 | 1 | `01-architecture.md` | Mental model. Data flow. How a customer message becomes an AI reply. |
 | 2 | `02-codebase-map.md` | Where everything lives. Saves you 30 min of grep. |
 | 3 | `03-conventions.md` | How to write code that fits. Security invariants. |
@@ -32,14 +37,18 @@ all visible live on the dashboard.**
 | 7 | `07-task-log.md` | What previous agents did. Append your entry when done. |
 | 8 | `08-hermes-handoff.md` | **If you are Hermes**, this is your operating envelope. Read it end-to-end. |
 | 9 | `09-single-user-deployment.md` | Actual deployment topology (Tailscale + Coolify, no public domain). |
+| 10 | `10-commercial-mvp-roadmap.md` | **Product path.** Phase-by-phase status table is the authoritative "what's done". |
+| 11 | `11-phase-2-4-deploy-smoke-test.md` | Post-deploy verification runbook for Knowledge Base + RAG + Tool Calling. |
 
 After reading, also glance at (in repo root):
 
 - `README.md` — human-facing overview, has the message-flow diagram
-- `ARCHITECTURE.md` — deeper technical architecture
+- `ARCHITECTURE.md` — deeper technical architecture (includes RAG + tool flow)
 - `DEPLOY_COOLIFY.md` — production deploy
 - `CREDENTIALS.md` — plaintext secrets registry (gitignored). Only read if the
   user points you at it. Never echo secrets back in chat.
+- `docs/api-contract.md` — all REST + WS endpoints with request/response shapes
+- `docs/database-schema.md` — 11-table schema (post-Phase-4) with common queries
 - `.windsurf/skills/ui-ux-pro-max/SKILL.md` — UI/UX design intelligence
   database (67 styles, 96 palettes, 57 font pairings, 99 UX rules, 25 chart
   types, 13 stacks). When any visual/UI work is requested, **start with**:
@@ -89,12 +98,22 @@ After reading, also glance at (in repo root):
 Append a dated entry to `07-task-log.md`:
 
 ```md
-## 2025-MM-DD — <short title>
+## YYYY-MM-DD — <short title>
 
-- What you changed (files)
-- Why (business reason)
-- How verified
-- Known follow-ups
+**Agent**: <Cascade | Claude Code | Hermes | ...>
+
+**What**: <1-2 sentences>
+
+**Files changed**:
+- `path/to/file` — 1-line why
+
+**How verified**:
+- <block from 06-verification.md you ran, + result>
+
+**Follow-ups**:
+- <anything you didn't finish>
 ```
 
-This is how the next agent picks up without losing context.
+This is how the next agent picks up without losing context. **The task log is
+the single source of truth for "what just happened."** The *next* agent (or
+you, in a new session) will read the top 3 entries before touching anything.

@@ -78,12 +78,13 @@ curl -b cookies.txt -X POST http://localhost:3001/api/auth/logout
 ## Block F — DB integrity (when schema or migrations touched)
 
 ```powershell
-docker compose exec postgres psql -U mantra -d mantra -c "\dt"
-# Should list: users, clients, whatsapp_instances, inbox_messages,
-#              ai_providers, client_ai_configs, customer_memories,
-#              audit_logs
+docker compose exec postgres psql -U mantra -d mantra_db -c "\dt"
+# Should list (Phase 0-4 schema):
+#   users, clients, ai_providers, client_ai_configs,
+#   whatsapp_instances, customer_memories, system_diagnoses, inbox_messages,
+#   client_knowledge_chunks, client_faqs, client_tools
 
-docker compose exec postgres psql -U mantra -d mantra -c `
+docker compose exec postgres psql -U mantra -d mantra_db -c `
   "SELECT table_name, count(*) FROM information_schema.columns
    WHERE table_schema='public' GROUP BY table_name;"
 ```

@@ -5,6 +5,125 @@
 
 ---
 
+## 2026-04-19 — Documentation restructure (Opsi C — Deep restructure)
+
+**Agent**: Cascade
+
+**What**: Comprehensive documentation refresh to reflect Phases 2-4
+(Knowledge Base + RAG + Tool Calling) and provide a clear pick-up
+procedure for AI agents cloning fresh from GitHub. Operator flagged
+that the previous docs would have confused a new agent ("thinks this is
+basic WA auto-reply only").
+
+**New files**:
+- `.agent/00-START-HERE.md` — 10-minute bootstrap for fresh-clone AIs.
+  Reading order, workflow, non-negotiable rules, first-move handshake
+  procedure. The "fresh AI from GitHub" answer the operator asked for.
+
+**Updated — `.agent/` skill pack**:
+- `README.md` — added row 0 (`00-START-HERE.md`) and rows 10-11
+  (roadmap + Phase 2-4 smoke test) to reading order; mission now
+  mentions RAG + tools; task-log template upgraded to match the
+  Phase 4 entry format; added `.agent/` helper link list to
+  `docs/api-contract.md` + `docs/database-schema.md`.
+- `01-architecture.md` — one-paragraph summary mentions pgvector +
+  tool loop; canonical message-flow diagram now shows the 5.5 RAG
+  retrieval step and 5.6 runReplyLoop tool iteration; state-ownership
+  table adds `client_knowledge_chunks`, `client_faqs`, `client_tools`;
+  "what we DO have now" section added.
+- `02-codebase-map.md` — added rows for `models/knowledge.go`,
+  `models/tool.go`, `handlers/knowledge.go`, `handlers/tools.go`,
+  `services/embedding.go`, `services/retrieval.go`,
+  `services/tools.go`, `hooks/use-knowledge.ts`, `hooks/use-tools.ts`,
+  `hooks/use-tenant.ts`, and the 2 new frontend pages
+  (`tenants/[id]/knowledge/page.tsx`, `tenants/[id]/tools/page.tsx`).
+  Reverse-index grew with RAG + builtin tool + new-table rows.
+- `04-runbooks.md` — fixed `psql -U mantra -d mantra` → `mantra_db`
+  (2 places); updated column name `ai_providers.name` → `provider_name`.
+- `06-verification.md` — fixed DB name in Block F; table list updated
+  from 8 tables to the 11 shipped post-Phase-4.
+- `08-hermes-handoff.md` — fixed `psql -U mantra -d mantra` → `mantra_db`
+  (2 places); fixed invalid column names `name, last_used_at` →
+  `provider_name, updated_at`.
+- `09-single-user-deployment.md` — fixed `pg_dump -U mantra mantra`
+  → `mantra_db` in the backup script.
+
+**Updated — docs/ specs**:
+- `docs/README.md` — "8 tables" → "11 tables"; added Phase 2-4 context;
+  added links to `00-START-HERE.md`, `10-commercial-mvp-roadmap.md`,
+  `11-phase-2-4-deploy-smoke-test.md`; extended maintenance rules.
+- `docs/api-contract.md` — bumped to v1.2.0; cookie auth noted; added
+  full **Knowledge Base** section (stats, chunks CRUD, FAQ CRUD with
+  request/response + validation + error cases) and **Client Tools**
+  section (CRUD + webhook envelope contract for tenants).
+- `docs/database-schema.md` — added required-extensions block for
+  pgvector; ER diagram expanded with 3 new tables; full column spec
+  for `client_knowledge_chunks`, `client_faqs`, `client_tools`;
+  changelog bumped to v1.2.
+- `docs/schema.ts` — added Drizzle mirrors for `client_knowledge_chunks`
+  (embedding declared as jsonb for TS — real DDL is `vector(1536)`),
+  `client_faqs`, `client_tools`.
+
+**Updated — root docs**:
+- `README.md` — stack bumped to Next.js 16 + pgvector; status row
+  listing Phases 0-4 shipped; "what it does" now includes Knowledge
+  Base + Tool Calling; message-flow diagram extended with RAG and
+  tool-loop steps; Documentation Map rebuilt with START-HERE as the
+  AI-agent entry point; Repository Layout refreshed with new
+  models/services/handlers/pages; Post-deploy Smoke Test now points
+  to the dedicated Phase 2-4 runbook.
+- `ARCHITECTURE.md` — bumped to v1.3; tech stack mentions pgvector;
+  Core Value Proposition lists KB + RAG + Tools; full **5.5 RAG
+  Retrieval Flow** and **5.6 Tool-Calling Flow** diagrams added; DB
+  schema section grew to 11 tables + new relationship lines.
+- `AI_AGENT_BRIEF.md` — rebranded as "TL;DR"; added Current Project
+  Status table; reading-order table updated with `00-START-HERE.md`,
+  11-phase-2-4 smoke test, Tailscale deployment doc; frontend +
+  backend codebase maps rewritten to include Phase 2-4 files; static
+  architecture ASCII replaced with pointers to `ARCHITECTURE.md` and
+  `.agent/01-architecture.md` (avoids triple maintenance).
+
+**Why**:
+- The operator explicitly asked: "kejelasan prosedur AI yang akan
+  meneruskan saat mengambil dari github". Previous docs assumed the
+  agent already lives in the repo; now a fresh-clone agent has a
+  single, numbered starting file (`00-START-HERE.md`) that points them
+  through the full skill pack.
+- Phase 2-4 shipped substantial code (11 new files, 3 DB tables, 8 new
+  API endpoints, 2 new UIs) but the public docs still described a
+  baseline WA bot. A new reviewer would mis-estimate complexity and
+  miss critical features (RAG, tools) entirely.
+- DB name `mantra` vs `mantra_db` mismatch across 5 documents would
+  have caused every agent copy-pasting diagnostic commands to fail
+  until they grep'd the container env themselves. Fixed once,
+  correctly, in every doc.
+- Duplication between `AI_AGENT_BRIEF.md` and `.agent/README.md` was
+  causing double maintenance burden. Brief now hands off to the skill
+  pack for deep content; keeps only what's unique (deployment
+  quickstart, secret regeneration, status table).
+
+**How verified**:
+- `npx tsc --noEmit` → exit 0 (ensures `docs/schema.ts` Drizzle
+  additions don't break Next.js type-check).
+- `grep_search` for `mantra -d mantra ` (fixed-string) and
+  `U mantra mantra\b` → 0 remaining matches in project docs
+  (node_modules refs are third-party, ignored).
+- `grep_search` for `8 tables` in `**/*.md` → 0 remaining matches.
+- `grep_search` for `00-START-HERE` → 4 refs across README.md,
+  AI_AGENT_BRIEF.md, `.agent/README.md` (all use correct
+  `./.agent/00-START-HERE.md` path).
+- Cross-reference audit: every new doc link resolves to a file that
+  actually exists in the repo.
+
+**Follow-ups for next agent**:
+- `DEVELOPMENT.md` — not touched this pass; skim and refresh if Phase
+  5 or 6 work starts (low priority, file is accurate for Phase 0-1).
+- `.replit` config not audited (operator doesn't use Replit).
+- Consider: a "features matrix" section in PRD.md once Phase 5/6 ships,
+  listing what each tier tenant gets.
+
+---
+
 ## 2026-04-19 — Pre-deploy audit: fixed HandleInbound merge bug
 
 **Agent**: Cascade

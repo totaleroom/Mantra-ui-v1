@@ -1,8 +1,10 @@
 # Mantra AI - System Architecture Document
 
-> **Version**: MVP v1.1 (Coolify deploy track)  
-> **Last Updated**: 2026  
-> **Purpose**: Single source of truth for system architecture and environment wiring
+> **Version**: MVP v1.3 (post-Phase-4 — Knowledge Base + RAG + Tool Calling)  
+> **Last Updated**: 2026-04-19  
+> **Purpose**: Single source of truth for system architecture and environment wiring.
+>
+> **Companion docs:** Agent-oriented overview lives at [`.agent/01-architecture.md`](./.agent/01-architecture.md); deep DB/API specs at [`docs/database-schema.md`](./docs/database-schema.md) and [`docs/api-contract.md`](./docs/api-contract.md).
 
 ---
 
@@ -12,7 +14,10 @@ Mantra AI is a multi-tenant SaaS platform for AI-powered WhatsApp automation, ta
 
 ### Core Value Proposition
 - **Multi-tenant architecture**: Single backend serves 50+ clients
-- **AI-powered responses**: Automatic customer query handling via LLM
+- **AI-powered responses**: Automatic customer query handling via LLM fallback chain
+- **Knowledge Base (Phase 2)**: Per-tenant document chunks (pgvector) + structured FAQs
+- **RAG retrieval (Phase 3)**: Inbound messages match FAQ keywords + top-K vector chunks, injected into system prompt
+- **Tool calling (Phase 4)**: Per-tenant function registry (builtin Go handlers or tenant webhooks) the LLM can invoke mid-conversation
 - **WhatsApp gateway**: Evolution API integration for WhatsApp Business
 - **Real-time inbox**: WebSocket-based live message streaming
 - **Role-based access**: SUPER_ADMIN, CLIENT_ADMIN, STAFF
@@ -28,7 +33,7 @@ Mantra AI is a multi-tenant SaaS platform for AI-powered WhatsApp automation, ta
 | **State** | TanStack Query | v5 | Server state, caching |
 | **Forms** | React Hook Form + Zod | latest | Validation, type safety |
 | **Backend** | Go Fiber | v2 | HTTP API, WebSocket |
-| **Database** | PostgreSQL | 15 | Primary data store |
+| **Database** | PostgreSQL + pgvector | 15 | Primary data store + vector embeddings (image `pgvector/pgvector:pg15`) |
 | **Cache** | Redis | 7 | Session, real-time data |
 | **WhatsApp** | Evolution API | latest | WhatsApp gateway |
 | **Auth** | JWT (jose) | v6 | Stateless authentication |
@@ -146,7 +151,7 @@ GET    /api/whatsapp/*          # Proxies to Go backend
 4. Frontend receives WebSocket update → Updates inbox UI
 ```
 
-### 5.4 AI Response Flow
+### 5.4 AI Response Flow (Phase 0 baseline)
 ```
 1. Go backend receives customer message
 2. Fetch active AI providers (priority-sorted)
@@ -159,22 +164,85 @@ GET    /api/whatsapp/*          # Proxies to Go backend
 5. Send response via Evolution API send-message endpoint
 ```
 
+### 5.5 RAG Retrieval Flow (Phase 3)
+```
+orchestrator.HandleInbound
+  → orchestrator.buildConversation(clientId, text)
+      → retrieval.Retrieve(clientId, text, topK=4)
+          ─── FAQ branch ───
+          1. Tokenize inbound text (lowercase words, >= 3 chars)
+          2. SELECT * FROM client_faqs
+             WHERE client_id = :id AND is_active = true
+               AND (trigger_keywords ?| tokens OR tags ?| tokens)
+             ORDER BY priority DESC LIMIT 3
+          ─── Vector branch ───
+          3. embedding.Embed(text)  -> vector(1536)
+             (tries tenant’s non-Groq provider first, then global)
+          4. SELECT id, content, source, category
+             FROM client_knowledge_chunks
+             WHERE client_id = :id
+             ORDER BY embedding <=> :vec
+             LIMIT topK
+          5. Compose [KNOWLEDGE] block, attach FAQs + chunk IDs
+             + provider name to RetrievedContext for audit
+  ← system_prompt now includes retrieved context block
+  → Orchestrator continues to 5.6 (tool loop)
+  ← Outbound message persisted with ai_thought_process containing
+    retrievedFaqs, retrievedChunks, embedProvider.
+```
+
+### 5.6 Tool-Calling Flow (Phase 4)
+```
+orchestrator.runReplyLoop(messages)
+  for iter = 0 .. MaxToolIterations (=3):
+      activeDefs = iter == 3 ? nil : loadedTools
+      resp, provider, _ = AI.ChatWithTools(messages, tools=activeDefs)
+      msg = resp.Choices[0].Message
+      if msg.ToolCalls is empty:
+          return msg.Content  ← terminal reply
+      messages.append(msg)                           // assistant turn
+      for call in msg.ToolCalls:
+          tool = byName[call.Function.Name]
+          result = ToolService.Execute(ctx, tool, clientId, customer,
+                                       call.Function.Arguments)
+          trace.append({name, args, result, durationMs})
+          messages.append({role:"tool", tool_call_id:call.ID,
+                           name:call.Function.Name, content:result})
+  error ("exceeded N tool iterations without terminal reply")
+
+ToolService.Execute dispatches by handler_type:
+  builtin  → builtinRegistry[handler_config.name](ctx, clientId, …)
+             Current: "lookup_memory"
+  webhook  → POST handler_config.url
+             body: {clientId, customer, tool, args}
+             header: X-Mantra-Secret (if handler_config.secret)
+             cross-host redirects blocked (SSRF mitigation)
+             response body capped 8 KiB, timeout 1-30 s
+             non-2xx wrapped as {"error": "webhook returned N: …"}
+
+Audit: each tool call appended to inbox_messages.ai_thought_process
+alongside the RAG audit.
+```
+
 ---
 
 ## 6. Database Schema
 
-### Core Tables
+### Core Tables (11 total after Phase 4)
 
-| Table | Purpose | Key Columns |
-|-------|---------|-------------|
-| `users` | Authentication | email, password (bcrypt), role |
-| `clients` | Tenants | name, token_balance, token_limit, is_active |
-| `ai_providers` | LLM credentials | provider_name, api_key, base_url, priority |
-| `client_ai_configs` | AI persona | model_id, system_prompt, temperature |
-| `whatsapp_instances` | WA connections | instance_name, status, webhook_url |
-| `customer_memories` | 4-day TTL memory | summary, raw_history, expires_at |
-| `inbox_messages` | Message history | direction, ai_thought_process |
-| `system_diagnoses` | Health monitoring | service_name, status, latency |
+| # | Table | Purpose | Key Columns |
+|---|-------|---------|-------------|
+| 1 | `users` | Authentication | email, password (bcrypt), role |
+| 2 | `clients` | Tenants | name, token_balance, token_limit, is_active |
+| 3 | `ai_providers` | LLM credentials | provider_name, api_key, base_url, priority |
+| 4 | `client_ai_configs` | AI persona | model_id, system_prompt, temperature |
+| 5 | `whatsapp_instances` | WA connections | instance_name, status, webhook_url |
+| 6 | `customer_memories` | 4-day TTL memory | summary, raw_history, expires_at |
+| 7 | `inbox_messages` | Message history | direction, ai_thought_process |
+| 8 | `client_knowledge_chunks` | **Phase 2** RAG chunks | `embedding vector(1536)`, content, HNSW index |
+| 9 | `client_faqs` | **Phase 2** structured Q&A | question, answer, tags (JSONB + GIN), trigger_keywords, priority |
+| 10 | `client_tools` | **Phase 4** tool registry | name, description, parameters_schema, handler_type, handler_config |
+| 11 | `system_diagnoses` | Health monitoring | service_name, status, latency |
 
 ### Key Relationships
 ```
@@ -183,7 +251,12 @@ clients (1) ──→ (1) client_ai_configs
 clients (1) ──→ (N) whatsapp_instances
 clients (1) ──→ (N) customer_memories
 clients (1) ──→ (N) inbox_messages
+clients (1) ──→ (N) client_knowledge_chunks    [Phase 2]
+clients (1) ──→ (N) client_faqs                 [Phase 2]
+clients (1) ──→ (N) client_tools                [Phase 4]
 ```
+
+Full column-by-column spec: [`docs/database-schema.md`](./docs/database-schema.md).
 
 ---
 

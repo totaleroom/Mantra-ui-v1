@@ -130,12 +130,12 @@ docker compose exec evolution env | Select-String -Pattern "WEBHOOK"
 docker compose logs backend | Select-String "Orchestrator"
 
 # 4. Does the client have an AI config?
-docker compose exec postgres psql -U mantra -d mantra -c `
+docker compose exec postgres psql -U mantra -d mantra_db -c `
   "SELECT client_id, model_id FROM client_ai_configs;"
 
 # 5. Are there active AI providers?
-docker compose exec postgres psql -U mantra -d mantra -c `
-  "SELECT name, priority, is_active FROM ai_providers ORDER BY priority;"
+docker compose exec postgres psql -U mantra -d mantra_db -c `
+  "SELECT provider_name, priority, is_active FROM ai_providers ORDER BY priority;"
 
 # 6. Did AI call succeed?
 docker compose logs backend | Select-String "AI call failed|all providers failed"
