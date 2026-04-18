@@ -16,7 +16,10 @@ services:
   # PostgreSQL 15 — 512 MB
   # -----------------------------------------------------------
   postgres:
-    image: postgres:15-alpine
+    # pgvector/pgvector:pg15 = official Postgres 15 + pgvector extension.
+    # Required for the RAG / knowledge-base features (Phase 2+).
+    # Same on-disk format as postgres:15 so existing volumes Just Work.
+    image: pgvector/pgvector:pg15
     container_name: mantra_postgres
     restart: unless-stopped
     environment:

@@ -191,6 +191,18 @@ export default function TenantDetailPage() {
             </Button>
           </Link>
           <div className="flex items-center gap-2">
+            <Link href={`/tenants/${clientId}/knowledge`}>
+              <Button type="button" variant="outline" size="sm">
+                <Database className="w-4 h-4 mr-2" />
+                Knowledge Base
+              </Button>
+            </Link>
+            <Link href={`/tenants/${clientId}/tools`}>
+              <Button type="button" variant="outline" size="sm">
+                <Zap className="w-4 h-4 mr-2" />
+                Tools
+              </Button>
+            </Link>
             <Button type="button" variant="outline" size="sm" onClick={handleReset} disabled={!isDirty}>
               <RotateCcw className="w-4 h-4 mr-2" />
               Reset

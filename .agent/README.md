@@ -40,6 +40,20 @@ After reading, also glance at (in repo root):
 - `DEPLOY_COOLIFY.md` — production deploy
 - `CREDENTIALS.md` — plaintext secrets registry (gitignored). Only read if the
   user points you at it. Never echo secrets back in chat.
+- `.windsurf/skills/ui-ux-pro-max/SKILL.md` — UI/UX design intelligence
+  database (67 styles, 96 palettes, 57 font pairings, 99 UX rules, 25 chart
+  types, 13 stacks). When any visual/UI work is requested, **start with**:
+  `python .windsurf/skills/ui-ux-pro-max/scripts/search.py "<keywords>" --design-system -p "Mantra AI"`.
+  Requires Python 3. Generated design systems can be persisted to
+  `design-system/MASTER.md` + `design-system/pages/*.md` with `--persist`.
+- `.windsurf/skills/frontend-design-pro/` — 11 aesthetic directions with
+  **working HTML/CSS demos** at `demos-v02/*.html`. Skill spec at
+  `skills/frontend-design-pro/SKILL.md`. Use when picking a distinctive
+  look for a new page/feature: read the skill's opinionated rules
+  (characterful fonts, asymmetry, signature details) + open the relevant
+  demo HTML to see actual implementation. Styles #3 (Glassmorphism),
+  #6 (Aurora Mesh), and #10 (Dark OLED Luxury) are closest matches to
+  Mantra's current direction.
 
 ---
 

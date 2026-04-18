@@ -51,35 +51,30 @@ function NavLink({ item, isActive, collapsed = false, onClick }: NavLinkProps) {
       href={item.href}
       onClick={onClick}
       className={cn(
-        'group relative flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-all duration-150',
+        'group relative flex items-center gap-3 px-3 py-2 rounded-md text-[13px] font-medium transition-colors duration-150',
         isActive
           ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-          : 'text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground',
+          : 'text-sidebar-foreground/75 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground',
         collapsed && 'justify-center px-2'
       )}
     >
-      {/* Active indicator: left-edge violet bar */}
-      {isActive && !collapsed && (
-        <span
-          aria-hidden
-          className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full bg-primary shadow-[0_0_12px_oklch(from_var(--primary)_l_c_h/0.6)]"
-        />
-      )}
       <NavIcon
         className={cn(
           'w-[18px] h-[18px] shrink-0 transition-colors',
-          isActive ? 'text-primary' : 'text-sidebar-foreground/60 group-hover:text-sidebar-foreground'
+          isActive ? 'text-foreground' : 'text-sidebar-foreground/55 group-hover:text-sidebar-foreground'
         )}
+        strokeWidth={isActive ? 2 : 1.75}
       />
-      {!collapsed && <span className="flex-1 truncate">{item.name}</span>}
-      {!collapsed && item.adminOnly && (
-        <Badge
-          variant="outline"
-          className="text-[10px] px-1.5 py-0 h-4 bg-warning/10 text-warning border-warning/25 font-medium"
-        >
-          <Shield className="w-2.5 h-2.5 mr-0.5" />
-          Admin
-        </Badge>
+      {!collapsed && <span className="flex-1 truncate tracking-[-0.01em]">{item.name}</span>}
+      {/* Red dot active indicator (Nothing-OS style) */}
+      {!collapsed && isActive && (
+        <span
+          aria-hidden
+          className="h-1.5 w-1.5 rounded-full bg-[var(--accent-red)] shrink-0"
+        />
+      )}
+      {!collapsed && !isActive && item.adminOnly && (
+        <Shield className="w-3 h-3 text-[var(--fg-subtle)]" strokeWidth={1.5} />
       )}
     </Link>
   )
@@ -95,33 +90,34 @@ function DesktopSidebar() {
       <aside
         className={cn(
           'hidden md:flex flex-col h-screen bg-sidebar border-r border-sidebar-border transition-[width] duration-300',
-          collapsed ? 'w-16' : 'w-64'
+          collapsed ? 'w-16' : 'w-60'
         )}
       >
-        {/* Logo */}
+        {/* Brand header */}
         <div className={cn(
-          'flex items-center h-16 px-4 border-b border-sidebar-border',
-          collapsed ? 'justify-center' : 'gap-3'
+          'flex items-center h-14 px-4 border-b border-sidebar-border',
+          collapsed ? 'justify-center' : 'gap-2.5'
         )}>
-          <div
-            className="flex items-center justify-center w-9 h-9 rounded-lg shadow-glow"
-            style={{
-              background:
-                'linear-gradient(135deg, oklch(from var(--primary) l c h) 0%, oklch(from var(--accent) l c h) 100%)',
-            }}
-          >
-            <Zap className="w-5 h-5 text-white" strokeWidth={2.5} />
+          <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-foreground shadow-soft">
+            <Zap className="w-4 h-4 text-background" strokeWidth={2.25} />
           </div>
           {!collapsed && (
-            <div className="flex flex-col">
-              <span className="text-sm font-semibold text-foreground tracking-tight">Mantra AI</span>
-              <span className="text-[11px] text-muted-foreground">Command Center</span>
+            <div className="flex flex-col min-w-0">
+              <span className="text-[13.5px] font-semibold text-foreground tracking-[-0.015em] leading-tight">Mantra AI</span>
+              <span className="text-[10px] text-[var(--fg-subtle)] leading-tight">COMMAND CENTER</span>
             </div>
           )}
         </div>
 
+        {/* Section label — Nothing mono style */}
+        {!collapsed && (
+          <div className="px-5 pt-5 pb-2">
+            <span className="label-mono">Navigation</span>
+          </div>
+        )}
+
         {/* Navigation */}
-        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+        <nav className={cn('flex-1 space-y-0.5 overflow-y-auto', collapsed ? 'p-2 pt-4' : 'px-3 pb-3')}>
           {navigation.map((item) => {
             const isActive = pathname === item.href
 
@@ -152,18 +148,18 @@ function DesktopSidebar() {
         </nav>
 
         {/* Collapse button */}
-        <div className="p-3 border-t border-border">
+        <div className="p-2 border-t border-sidebar-border">
           <Button
             variant="ghost"
             size="sm"
             onClick={() => setCollapsed(!collapsed)}
-            className={cn('w-full', collapsed ? 'px-2' : 'justify-start')}
+            className={cn('w-full h-8 text-[12px] text-[var(--fg-muted)] hover:text-foreground', collapsed ? 'px-2' : 'justify-start')}
           >
             {collapsed ? (
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight className="w-3.5 h-3.5" />
             ) : (
               <>
-                <ChevronLeft className="w-4 h-4 mr-2" />
+                <ChevronLeft className="w-3.5 h-3.5 mr-2" />
                 <span>Collapse</span>
               </>
             )}
@@ -191,23 +187,17 @@ function MobileSidebar() {
           <span className="sr-only">Open navigation menu</span>
         </Button>
       </SheetTrigger>
-      <SheetContent side="left" className="w-72 p-0 bg-sidebar border-sidebar-border">
+      <SheetContent side="left" className="w-64 p-0 bg-sidebar border-sidebar-border">
         <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
 
-        {/* Logo */}
-        <div className="flex items-center h-16 px-4 border-b border-sidebar-border gap-3">
-          <div
-            className="flex items-center justify-center w-9 h-9 rounded-lg shadow-glow"
-            style={{
-              background:
-                'linear-gradient(135deg, oklch(from var(--primary) l c h) 0%, oklch(from var(--accent) l c h) 100%)',
-            }}
-          >
-            <Zap className="w-5 h-5 text-white" strokeWidth={2.5} />
+        {/* Brand header */}
+        <div className="flex items-center h-14 px-4 border-b border-sidebar-border gap-2.5">
+          <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-foreground">
+            <Zap className="w-4 h-4 text-background" strokeWidth={2.25} />
           </div>
-          <div className="flex flex-col flex-1">
-            <span className="text-sm font-semibold text-foreground tracking-tight">Mantra AI</span>
-            <span className="text-[11px] text-muted-foreground">Command Center</span>
+          <div className="flex flex-col flex-1 min-w-0">
+            <span className="text-[13.5px] font-semibold text-foreground tracking-[-0.015em] leading-tight">Mantra AI</span>
+            <span className="text-[10px] text-[var(--fg-subtle)] leading-tight">COMMAND CENTER</span>
           </div>
           <Button 
             variant="ghost" 
@@ -220,7 +210,10 @@ function MobileSidebar() {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+        <div className="px-5 pt-5 pb-2">
+          <span className="label-mono">Navigation</span>
+        </div>
+        <nav className="flex-1 px-3 pb-3 space-y-0.5 overflow-y-auto">
           {navigation.map((item) => {
             const isActive = pathname === item.href
             return (
@@ -235,10 +228,8 @@ function MobileSidebar() {
         </nav>
 
         {/* Footer */}
-        <div className="p-4 border-t border-border">
-          <p className="text-xs text-muted-foreground text-center">
-            Version 2.0 Production
-          </p>
+        <div className="p-4 border-t border-sidebar-border">
+          <p className="label-mono text-center">v2.0 · production</p>
         </div>
       </SheetContent>
     </Sheet>

@@ -149,5 +149,10 @@ func AutoMigrate(db *gorm.DB) error {
 		&CustomerMemory{},
 		&SystemDiagnosis{},
 		&InboxMessage{},
+		// Knowledge base (Phase 2 — RAG foundation)
+		&KnowledgeChunk{},
+		&FAQ{},
+		// Tool calling (Phase 4 — AI function calling)
+		&ClientTool{},
 	)
 }

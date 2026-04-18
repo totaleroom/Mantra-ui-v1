@@ -1,6 +1,8 @@
 package services
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -21,7 +23,9 @@ import (
 type Orchestrator struct {
 	ai        *AIFallbackService
 	memory    *MemoryService
+	retrieval *RetrievalService
 	evolution *EvolutionService
+	tools     *ToolService
 
 	// onMessagePersisted is called whenever the orchestrator saves a new
 	// inbox message (inbound OR outbound). The webhook handler sets this
@@ -34,7 +38,9 @@ func NewOrchestrator() *Orchestrator {
 	return &Orchestrator{
 		ai:        NewAIFallbackService(),
 		memory:    NewMemoryService(),
+		retrieval: NewRetrievalService(),
 		evolution: NewEvolutionService(),
+		tools:     NewToolService(),
 	}
 }
 
@@ -126,23 +132,17 @@ func (o *Orchestrator) HandleInbound(in InboundMessage) (string, error) {
 		return "", nil // inbound saved, but no auto-reply configured
 	}
 
-	// 6. Build conversation
-	messages := o.buildConversation(client.ID, in.CustomerNumber, aiCfg, in.Text)
+	// 6. Build conversation (with per-tenant RAG retrieval)
+	messages, retrieved := o.buildConversation(client.ID, in.CustomerNumber, aiCfg, in.Text)
 
-	chatResp, providerName, err := o.ai.Chat(
-		&client.ID,
-		aiCfg.ModelID,
-		messages,
-		aiCfg.Temperature,
-	)
+	// 6b. Run the AI reply loop with tool calling (Phase 4). This may make
+	// multiple round-trips to the model; each tool invocation is captured
+	// in `toolTrace` for audit logging.
+	reply, providerName, toolTrace, err := o.runReplyLoop(client.ID, in.CustomerNumber, aiCfg, messages)
 	if err != nil {
 		log.Printf("[Orchestrator] AI call failed for client %d: %v", client.ID, err)
-		return "", fmt.Errorf("AI call failed: %w", err)
+		return "", err
 	}
-	if chatResp == nil || len(chatResp.Choices) == 0 {
-		return "", errors.New("AI returned no choices")
-	}
-	reply := chatResp.Choices[0].Message.Content
 	if reply == "" {
 		return "", errors.New("AI returned empty reply")
 	}
@@ -162,6 +162,23 @@ func (o *Orchestrator) HandleInbound(in InboundMessage) (string, error) {
 		Direction:      models.MessageDirectionOutbound,
 		Timestamp:      time.Now(),
 		ModelUsed:      &providerName,
+	}
+	// Attach retrieval + tool-call audit to the message so the operator
+	// can inspect the AI's reasoning in the dashboard.
+	audit := map[string]interface{}{}
+	if retrieved.Blob != "" || len(retrieved.FAQIDs) > 0 || len(retrieved.ChunkIDs) > 0 {
+		audit["retrievedFaqs"] = retrieved.FAQIDs
+		audit["retrievedChunks"] = retrieved.ChunkIDs
+		audit["embedProvider"] = retrieved.Provider
+	}
+	if len(toolTrace) > 0 {
+		audit["toolCalls"] = toolTrace
+	}
+	if len(audit) > 0 {
+		if blob, err := json.Marshal(audit); err == nil {
+			s := string(blob)
+			outbound.AIThoughtProcess = &s
+		}
 	}
 	if err := database.DB.Create(outbound).Error; err != nil {
 		log.Printf("[Orchestrator] failed to persist outbound: %v", err)
@@ -210,16 +227,143 @@ func (o *Orchestrator) persistInbound(in InboundMessage, clientID uint) *models.
 	return msg
 }
 
+// toolTraceEntry records one completed tool invocation for audit logging.
+// Persisted into InboxMessage.AIThoughtProcess so the dashboard can show
+// "AI called tool X with args Y and got back Z".
+type toolTraceEntry struct {
+	Name      string `json:"name"`
+	CallID    string `json:"callId"`
+	Arguments string `json:"args"`
+	Result    string `json:"result"`
+	DurationMs int64 `json:"durationMs"`
+}
+
+// runReplyLoop drives the AI ↔ tools conversation up to MaxToolIterations.
+// It returns the final assistant reply, the provider that produced it, and
+// an audit trace of each tool call. On the first turn it loads the
+// tenant's active tools; subsequent iterations feed `role: "tool"` results
+// back to the model until the model returns a content-only message or we
+// hit the iteration cap.
+func (o *Orchestrator) runReplyLoop(
+	clientID uint,
+	customerNumber string,
+	cfg models.ClientAIConfig,
+	initialMessages []ChatMessage,
+) (reply string, providerName string, trace []toolTraceEntry, err error) {
+	// 1. Resolve tools for this tenant (empty list disables function calling)
+	defs, byName, _ := o.tools.LoadToolsForClient(clientID)
+
+	// Working message slice. We append assistant + tool turns as we loop.
+	messages := make([]ChatMessage, len(initialMessages))
+	copy(messages, initialMessages)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
+	for iter := 0; iter < MaxToolIterations+1; iter++ {
+		// On the last allowed iteration, force the model to stop using tools
+		// so we always end with a human-readable reply.
+		activeDefs := defs
+		if iter == MaxToolIterations {
+			activeDefs = nil
+		}
+
+		resp, pName, callErr := o.ai.ChatWithTools(&clientID, cfg.ModelID, messages, cfg.Temperature, activeDefs)
+		if callErr != nil {
+			return "", "", trace, callErr
+		}
+		if resp == nil || len(resp.Choices) == 0 {
+			return "", "", trace, errors.New("AI returned no choices")
+		}
+		providerName = pName
+
+		choice := resp.Choices[0]
+		msg := choice.Message
+
+		// Happy path: no tool calls → we're done, return the content.
+		if len(msg.ToolCalls) == 0 {
+			return msg.Content, providerName, trace, nil
+		}
+
+		// The model wants to call one or more tools. Append the assistant
+		// turn (content may be empty, that's fine) then execute each call.
+		messages = append(messages, msg)
+
+		for _, call := range msg.ToolCalls {
+			t, ok := byName[call.Function.Name]
+			var result string
+			if !ok {
+				result = fmt.Sprintf(`{"error":"tool %q not registered for this tenant"}`, call.Function.Name)
+			} else {
+				start := time.Now()
+				callCtx, callCancel := context.WithTimeout(ctx, 35*time.Second)
+				result = o.tools.Execute(callCtx, t, clientID, customerNumber, call.Function.Arguments)
+				callCancel()
+				trace = append(trace, toolTraceEntry{
+					Name:       call.Function.Name,
+					CallID:     call.ID,
+					Arguments:  call.Function.Arguments,
+					Result:     truncateForAudit(result),
+					DurationMs: time.Since(start).Milliseconds(),
+				})
+			}
+
+			// Feed the result back to the model. Response body is verbatim —
+			// Execute() already guarantees it's valid JSON (or wrapped so).
+			messages = append(messages, ChatMessage{
+				Role:       "tool",
+				ToolCallID: call.ID,
+				Name:       call.Function.Name,
+				Content:    result,
+			})
+		}
+	}
+
+	// Exhausted the iteration budget without a final reply.
+	return "", providerName, trace, fmt.Errorf("AI exceeded %d tool iterations without a final reply", MaxToolIterations)
+}
+
+// truncateForAudit keeps the ai_thought_process column from ballooning if
+// a tool returns a large blob. The LLM still saw the full value — we just
+// don't persist more than ~1 KiB per call.
+func truncateForAudit(s string) string {
+	const maxLen = 1024
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "…"
+}
+
 // buildConversation assembles the [system, ...history, user] slice the AI expects.
 // History is sourced from CustomerMemory.RawHistory (last N turns).
+//
+// It also runs RAG retrieval against the tenant's knowledge base: matching
+// FAQs (by trigger_keywords/tags) and top-K vector-similar chunks. When
+// anything relevant is found, the KB block is appended to the system
+// prompt. The retrieval audit (IDs used, embedding provider) is returned
+// separately so the caller can log it into the outbound message.
 func (o *Orchestrator) buildConversation(
 	clientID uint,
 	customerNumber string,
 	cfg models.ClientAIConfig,
 	currentText string,
-) []ChatMessage {
-	msgs := []ChatMessage{{Role: "system", Content: cfg.SystemPrompt}}
+) ([]ChatMessage, RetrievedContext) {
+	// 1. Start from the configured system prompt
+	systemPrompt := cfg.SystemPrompt
 
+	// 2. Retrieve relevant KB context (FAQs + vector chunks). Best-effort:
+	//    if retrieval fails it just returns an empty struct; never fatal.
+	var retrieved RetrievedContext
+	if o.retrieval != nil {
+		retrieved = o.retrieval.Retrieve(clientID, currentText, 4)
+		if retrieved.Blob != "" {
+			systemPrompt += retrieved.Blob
+		}
+	}
+
+	msgs := []ChatMessage{{Role: "system", Content: systemPrompt}}
+
+	// 3. Short conversation memory (last N turns)
 	mem, _ := o.memory.GetMemory(clientID, customerNumber)
 	if mem != nil && len(mem.RawHistory) > 0 {
 		// Cap at last 10 turns to keep prompt cost bounded
@@ -238,7 +382,7 @@ func (o *Orchestrator) buildConversation(
 	}
 
 	msgs = append(msgs, ChatMessage{Role: "user", Content: currentText})
-	return msgs
+	return msgs, retrieved
 }
 
 // updateMemory appends the new turn and persists with the client's TTL.

@@ -26,19 +26,19 @@ export function EmptyState({ icon: Icon, title, description, action, className }
         className
       )}
     >
-      {/* Geometric backdrop + icon */}
-      <div className="relative mb-5">
+      {/* Dot matrix backdrop (Nothing-OS) + Apple-style icon tile */}
+      <div className="relative mb-6">
         <div
           aria-hidden
-          className="absolute inset-0 -m-6 rounded-full bg-orb-violet blur-2xl opacity-40"
+          className="absolute inset-0 -m-8 bg-dots opacity-50 [mask-image:radial-gradient(circle,black_30%,transparent_70%)]"
         />
-        <div className="relative flex items-center justify-center w-16 h-16 rounded-2xl border border-border bg-card shadow-soft-md">
-          <Icon className="w-7 h-7 text-primary" strokeWidth={1.75} />
+        <div className="relative flex items-center justify-center w-14 h-14 rounded-2xl border-hairline bg-card shadow-soft-md">
+          <Icon className="w-6 h-6 text-foreground" strokeWidth={1.5} />
         </div>
       </div>
-      <h3 className="text-base font-semibold text-foreground tracking-tight">{title}</h3>
+      <h3 className="text-[15px] font-semibold text-foreground tracking-[-0.015em]">{title}</h3>
       {description && (
-        <p className="text-sm text-muted-foreground mt-2 max-w-sm leading-relaxed">{description}</p>
+        <p className="text-[13px] text-[var(--fg-muted)] mt-1.5 max-w-sm leading-relaxed">{description}</p>
       )}
       {action && (
         <div className="mt-6">

@@ -99,24 +99,35 @@ const nextConfig = {
 
   experimental: {
     optimizePackageImports: ['lucide-react', '@radix-ui/react-icons'],
-    // Dev-only: whitelist common localhost origins so Server Actions don't
-    // 403 when accessed through a browser-preview proxy (Windsurf uses a
-    // dynamic port on 127.0.0.1). Production keeps strict same-origin checks.
+    // Dev-only: whitelist localhost origins so Server Actions don't 403
+    // when accessed through a browser-preview proxy (Windsurf, VSCode,
+    // etc. use dynamic ports on 127.0.0.1). Production keeps strict
+    // same-origin checks. We generate the full ephemeral port range
+    // (49152-65535 per IANA) for both 127.0.0.1 and localhost so any
+    // proxy session Just Works without edits.
     serverActions: isProd
       ? undefined
       : {
           allowedOrigins: [
             'localhost:5000',
             '127.0.0.1:5000',
-            // Windsurf browser preview proxy — explicit list of the
-            // ports we've seen so far. Append more here if needed.
-            '127.0.0.1:52446',
-            '127.0.0.1:52447',
-            '127.0.0.1:52448',
-            '127.0.0.1:52449',
-            '127.0.0.1:52450',
+            '0.0.0.0:5000',
+            // Full IANA ephemeral range (49152-65535) for both host names.
+            // ~33k strings total; negligible for dev.
+            ...Array.from({ length: 65535 - 49152 + 1 }, (_, i) => {
+              const port = 49152 + i
+              return `127.0.0.1:${port}`
+            }),
+            ...Array.from({ length: 65535 - 49152 + 1 }, (_, i) => {
+              const port = 49152 + i
+              return `localhost:${port}`
+            }),
           ],
-          allowedForwardedHosts: ['localhost:5000', '127.0.0.1:5000'],
+          allowedForwardedHosts: [
+            'localhost:5000',
+            '127.0.0.1:5000',
+            '0.0.0.0:5000',
+          ],
         },
   },
 }

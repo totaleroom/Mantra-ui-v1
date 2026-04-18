@@ -6,6 +6,9 @@
 
 -- Extensions
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+-- pgvector is used for semantic search / RAG over per-tenant knowledge base.
+-- Required image: pgvector/pgvector:pg15 (set in docker-compose.yaml).
+CREATE EXTENSION IF NOT EXISTS "vector";
 
 -- Enums
 DO $$ BEGIN
@@ -139,7 +142,113 @@ CREATE INDEX IF NOT EXISTS idx_inbox_messages_timestamp  ON inbox_messages (time
 CREATE INDEX IF NOT EXISTS idx_inbox_messages_direction  ON inbox_messages (direction);
 
 -- ---------------------------------------------------------------
--- 8. SYSTEM DIAGNOSIS
+-- 8. KNOWLEDGE BASE — PER-TENANT DOCUMENTS / CHUNKS (RAG)
+-- ---------------------------------------------------------------
+-- Vector dim 1536 matches OpenAI text-embedding-3-small (most common).
+-- If you swap to text-embedding-3-large (3072) or BGE-small (384), update
+-- the column and re-embed existing rows.
+CREATE TABLE IF NOT EXISTS client_knowledge_chunks (
+    id          BIGSERIAL PRIMARY KEY,
+    client_id   BIGINT      NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    content     TEXT        NOT NULL,
+    embedding   vector(1536),
+    source      TEXT,                       -- e.g. 'FAQ', 'product-catalog.pdf', 'manual-paste'
+    category    TEXT,                       -- e.g. 'return-policy', 'shipping', 'pricing'
+    metadata    JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    token_count INTEGER,                    -- approx tokens in content (for budgeting)
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- B-tree on client_id: fast tenant scoping (every query is client-scoped)
+CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_client_id
+    ON client_knowledge_chunks (client_id);
+
+-- HNSW index for fast approximate nearest-neighbor on the embedding.
+-- Built lazily; on a fresh table this is essentially free.
+-- Uses cosine distance (vector_cosine_ops) which matches how OpenAI
+-- embeddings are typically compared.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_indexes
+        WHERE tablename = 'client_knowledge_chunks'
+          AND indexname = 'idx_knowledge_chunks_embedding_hnsw'
+    ) THEN
+        EXECUTE 'CREATE INDEX idx_knowledge_chunks_embedding_hnsw
+                 ON client_knowledge_chunks
+                 USING hnsw (embedding vector_cosine_ops)';
+    END IF;
+EXCEPTION
+    WHEN undefined_object THEN
+        -- pgvector not installed (unusual, but fail gracefully)
+        RAISE NOTICE '[Mantra] pgvector extension missing — HNSW index skipped.';
+END $$;
+
+-- ---------------------------------------------------------------
+-- 9. STRUCTURED FAQ PER-TENANT
+-- ---------------------------------------------------------------
+-- FAQs are human-authored, editable, and MATCHED FIRST (before vector
+-- retrieval) because exact-match Q&A is higher quality than semantic
+-- similarity for well-known questions.
+-- Tags and trigger_keywords use JSONB arrays rather than TEXT[] because
+-- GORM has native serializer:json support without extra dependencies.
+-- Query with: WHERE tags @> '"shipping"' OR tags ? 'shipping'
+CREATE TABLE IF NOT EXISTS client_faqs (
+    id                BIGSERIAL PRIMARY KEY,
+    client_id         BIGINT  NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    question          TEXT    NOT NULL,
+    answer            TEXT    NOT NULL,
+    tags              JSONB   NOT NULL DEFAULT '[]'::jsonb,
+    priority          INTEGER NOT NULL DEFAULT 0,    -- higher = shown first
+    is_active         BOOLEAN NOT NULL DEFAULT TRUE,
+    trigger_keywords  JSONB   NOT NULL DEFAULT '[]'::jsonb, -- exact/fuzzy keyword match
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_faqs_client_id       ON client_faqs (client_id);
+CREATE INDEX IF NOT EXISTS idx_faqs_active_priority ON client_faqs (client_id, is_active, priority DESC);
+-- GIN index lets us query arrays fast: WHERE tags @> '"shipping"'::jsonb
+CREATE INDEX IF NOT EXISTS idx_faqs_tags_gin        ON client_faqs USING gin (tags jsonb_path_ops);
+
+-- ---------------------------------------------------------------
+-- 10. CLIENT TOOLS (Phase 4 — AI function calling)
+-- ---------------------------------------------------------------
+-- Per-tenant tool definitions the AI can invoke during a conversation.
+-- Supported handler types:
+--   builtin  — Go-side handler looked up by `handler_config->>'name'`
+--              (e.g. "lookup_memory"). Safe, preinstalled.
+--   webhook  — POST to `handler_config->>'url'` with
+--              {"customer": "...", "args": {...}, "clientId": N}.
+--              The response body (up to 8 KiB) becomes the tool result.
+--
+-- parameters_schema follows JSON Schema (OpenAI function-calling format).
+-- Example:
+--   {
+--     "type":"object",
+--     "properties":{"orderId":{"type":"string"}},
+--     "required":["orderId"]
+--   }
+CREATE TABLE IF NOT EXISTS client_tools (
+    id                BIGSERIAL PRIMARY KEY,
+    client_id         BIGINT  NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    name              TEXT    NOT NULL,                    -- snake_case, unique per client
+    description       TEXT    NOT NULL,                    -- LLM sees this to decide when to call
+    parameters_schema JSONB   NOT NULL DEFAULT '{}'::jsonb,-- JSON Schema object
+    handler_type      TEXT    NOT NULL DEFAULT 'webhook',  -- 'builtin' | 'webhook'
+    handler_config    JSONB   NOT NULL DEFAULT '{}'::jsonb,-- { name:string } OR { url, secret? }
+    is_active         BOOLEAN NOT NULL DEFAULT TRUE,
+    timeout_ms        INTEGER NOT NULL DEFAULT 8000,       -- per-call timeout (1-30s)
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (client_id, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_client_tools_active ON client_tools (client_id, is_active);
+
+-- ---------------------------------------------------------------
+-- 11. SYSTEM DIAGNOSIS
 -- ---------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS system_diagnoses (
     id           BIGSERIAL PRIMARY KEY,

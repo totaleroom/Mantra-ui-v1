@@ -83,6 +83,27 @@ func Setup(app *fiber.App) {
 	clients.Get("/:id/ai-config", handlers.GetClientAIConfig)
 	clients.Put("/:id/ai-config", handlers.UpdateClientAIConfig)
 
+	// ─── Knowledge base (Phase 2 — RAG foundation) ─────────────────────
+	// All endpoints are tenant-scoped via :id. Upload accepts raw text;
+	// backend chunks, embeds (via OpenAI-compat provider), and persists.
+	clients.Get("/:id/knowledge/stats", handlers.GetKnowledgeStats)
+	clients.Post("/:id/knowledge/chunks", handlers.UploadKnowledgeChunks)
+	clients.Get("/:id/knowledge/chunks", handlers.ListKnowledgeChunks)
+	clients.Delete("/:id/knowledge/chunks/:chunkId", handlers.DeleteKnowledgeChunk)
+	clients.Post("/:id/knowledge/faqs", handlers.CreateFAQ)
+	clients.Get("/:id/knowledge/faqs", handlers.ListFAQs)
+	clients.Patch("/:id/knowledge/faqs/:faqId", handlers.UpdateFAQ)
+	clients.Delete("/:id/knowledge/faqs/:faqId", handlers.DeleteFAQ)
+
+	// ─── Tool calling (Phase 4 — AI function calling) ──────────────────
+	// Per-tenant tool definitions the AI can invoke during a conversation.
+	// Supports builtin (compiled Go handlers) and webhook (tenant URL)
+	// handler types. Execution is driven by orchestrator.runReplyLoop.
+	clients.Post("/:id/tools", handlers.CreateTool)
+	clients.Get("/:id/tools", handlers.ListTools)
+	clients.Patch("/:id/tools/:toolId", handlers.UpdateTool)
+	clients.Delete("/:id/tools/:toolId", handlers.DeleteTool)
+
 	system := api.Group("/system")
 	system.Get("/health", handlers.GetSystemHealth)
 	system.Post("/diagnose", handlers.RunDiagnosis)

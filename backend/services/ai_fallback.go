@@ -13,20 +13,53 @@ import (
         "time"
 )
 
+// ChatMessage is one turn in a conversation. The tool-calling fields are
+// all optional and only set when the message is either an assistant
+// tool-call request or a tool response being fed back to the model.
 type ChatMessage struct {
-        Role    string `json:"role"`
-        Content string `json:"content"`
+        Role       string     `json:"role"`
+        Content    string     `json:"content"`
+        Name       string     `json:"name,omitempty"`
+        ToolCallID string     `json:"tool_call_id,omitempty"`
+        ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+}
+
+// ToolCall mirrors the OpenAI function-calling response shape.
+type ToolCall struct {
+        ID       string           `json:"id"`
+        Type     string           `json:"type"` // always "function" today
+        Function ToolCallFunction `json:"function"`
+}
+
+type ToolCallFunction struct {
+        Name      string `json:"name"`
+        Arguments string `json:"arguments"` // JSON-encoded args, parse with json.Unmarshal
+}
+
+// ToolDefinition is the OpenAI-compatible function-calling tool entry.
+type ToolDefinition struct {
+        Type     string       `json:"type"` // always "function"
+        Function FunctionDef  `json:"function"`
+}
+
+type FunctionDef struct {
+        Name        string                 `json:"name"`
+        Description string                 `json:"description"`
+        Parameters  map[string]interface{} `json:"parameters"`
 }
 
 type ChatRequest struct {
-        Model       string        `json:"model"`
-        Messages    []ChatMessage `json:"messages"`
-        Temperature float64       `json:"temperature"`
-        MaxTokens   int           `json:"max_tokens,omitempty"`
+        Model       string           `json:"model"`
+        Messages    []ChatMessage    `json:"messages"`
+        Temperature float64          `json:"temperature"`
+        MaxTokens   int              `json:"max_tokens,omitempty"`
+        Tools       []ToolDefinition `json:"tools,omitempty"`
+        ToolChoice  string           `json:"tool_choice,omitempty"` // "auto" | "none" | "required"
 }
 
 type ChatChoice struct {
-        Message ChatMessage `json:"message"`
+        Message      ChatMessage `json:"message"`
+        FinishReason string      `json:"finish_reason"`
 }
 
 type ChatResponse struct {
@@ -67,7 +100,18 @@ func (s *AIFallbackService) GetProvidersByPriority(clientID *uint) ([]models.AIP
         return providers, nil
 }
 
+// Chat is the no-tools entry point — preserved for callers that don't
+// need function calling. Internally calls ChatWithTools with tools=nil.
 func (s *AIFallbackService) Chat(clientID *uint, modelID string, messages []ChatMessage, temperature float64) (*ChatResponse, string, error) {
+        return s.ChatWithTools(clientID, modelID, messages, temperature, nil)
+}
+
+// ChatWithTools runs the provider fallback chain with optional tools. When
+// tools is nil or empty the request is a plain chat completion; the
+// returned *ChatResponse contains either a normal assistant message or an
+// assistant message with tool_calls populated (inspect
+// resp.Choices[0].Message.ToolCalls to decide).
+func (s *AIFallbackService) ChatWithTools(clientID *uint, modelID string, messages []ChatMessage, temperature float64, tools []ToolDefinition) (*ChatResponse, string, error) {
         providers, err := s.GetProvidersByPriority(clientID)
         if err != nil {
                 return nil, "", err
@@ -78,7 +122,7 @@ func (s *AIFallbackService) Chat(clientID *uint, modelID string, messages []Chat
 
         var lastErr error
         for _, p := range providers {
-                resp, err := s.callProvider(p, modelID, messages, temperature)
+                resp, err := s.callProvider(p, modelID, messages, temperature, tools)
                 if err != nil {
                         lastErr = err
                         errMsg := err.Error()
@@ -96,7 +140,7 @@ func (s *AIFallbackService) Chat(clientID *uint, modelID string, messages []Chat
         return nil, "", fmt.Errorf("all providers failed. Last error: %v", lastErr)
 }
 
-func (s *AIFallbackService) callProvider(p models.AIProvider, modelID string, messages []ChatMessage, temperature float64) (*ChatResponse, error) {
+func (s *AIFallbackService) callProvider(p models.AIProvider, modelID string, messages []ChatMessage, temperature float64, tools []ToolDefinition) (*ChatResponse, error) {
         baseURL := "https://api.openai.com/v1"
         if p.BaseURL != nil && *p.BaseURL != "" {
                 baseURL = strings.TrimRight(*p.BaseURL, "/")
@@ -106,6 +150,10 @@ func (s *AIFallbackService) callProvider(p models.AIProvider, modelID string, me
                 Model:       modelID,
                 Messages:    messages,
                 Temperature: temperature,
+        }
+        if len(tools) > 0 {
+                payload.Tools = tools
+                payload.ToolChoice = "auto"
         }
 
         body, err := json.Marshal(payload)
@@ -156,7 +204,7 @@ func (s *AIFallbackService) TestProvider(providerID uint) (int, error) {
         }
 
         start := time.Now()
-        _, err := s.callProvider(p, "gpt-3.5-turbo", messages, 0.1)
+        _, err := s.callProvider(p, "gpt-3.5-turbo", messages, 0.1, nil)
         latency := int(time.Since(start).Milliseconds())
 
         if err != nil {

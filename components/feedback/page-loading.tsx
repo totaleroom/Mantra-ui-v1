@@ -1,62 +1,51 @@
-import { Skeleton } from '@/components/ui/skeleton'
-import { Card, CardContent, CardHeader } from '@/components/ui/card'
-
 /**
- * Generic full-page loading skeleton that mirrors the dashboard shell
- * (4 stat cards on top, a main content card below). Tuned to look like the
- * real page so users perceive it as near-ready rather than "something's loading".
+ * Flat loading state. No skeleton pulses, no shimmer. Just a small
+ * mono label top-left + a thin red-line progress indicator at the top
+ * of the viewport. Apple × Nothing OS: silent and precise.
+ *
+ * If a specific page needs denser loading, override by adding a local
+ * `loading.tsx` that renders whatever fits that context.
  */
 export function PageLoading() {
   return (
-    <div className="space-y-6" aria-busy="true" aria-live="polite">
-      {/* Stat cards row */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Card key={i} className="border-border/60">
-            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <Skeleton className="h-4 w-24" />
-              <Skeleton className="h-8 w-8 rounded-md" />
-            </CardHeader>
-            <CardContent>
-              <Skeleton className="h-7 w-16 mb-2" />
-              <Skeleton className="h-3 w-20" />
-            </CardContent>
-          </Card>
-        ))}
+    <div
+      className="relative min-h-[40vh]"
+      aria-busy="true"
+      aria-live="polite"
+    >
+      {/* Thin horizontal red indeterminate line — anchored to top of content */}
+      <div
+        aria-hidden
+        className="absolute top-0 left-0 right-0 h-[2px] overflow-hidden rounded-full bg-transparent"
+      >
+        <div className="h-full w-1/3 bg-[var(--accent-red)] animate-[loading-slide_1.1s_ease-in-out_infinite]" />
       </div>
 
-      {/* Primary content card */}
-      <Card className="border-border/60">
-        <CardHeader>
-          <Skeleton className="h-5 w-40" />
-          <Skeleton className="h-3 w-64 mt-2" />
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="flex items-center gap-3">
-              <Skeleton className="h-10 w-10 rounded-full shrink-0" />
-              <div className="flex-1 space-y-2">
-                <Skeleton className="h-3 w-3/4" />
-                <Skeleton className="h-3 w-1/2" />
-              </div>
-              <Skeleton className="h-8 w-16" />
-            </div>
-          ))}
-        </CardContent>
-      </Card>
+      <div className="pt-6">
+        <span className="label-mono">Loading</span>
+      </div>
+
+      <style>{`
+        @keyframes loading-slide {
+          0%   { transform: translateX(-100%); }
+          100% { transform: translateX(400%); }
+        }
+      `}</style>
 
       <span className="sr-only">Loading page content…</span>
     </div>
   )
 }
 
-/** Compact loading for modals / sheets / smaller panels. */
-export function InlineLoading({ rows = 3 }: { rows?: number }) {
+/** Compact loading for modals / sheets / smaller panels. Flat, no pulse. */
+export function InlineLoading() {
   return (
-    <div className="space-y-2" aria-busy="true" aria-live="polite">
-      {Array.from({ length: rows }).map((_, i) => (
-        <Skeleton key={i} className="h-10 w-full" />
-      ))}
+    <div
+      className="flex items-center gap-2 text-[var(--fg-muted)]"
+      aria-busy="true"
+      aria-live="polite"
+    >
+      <span className="label-mono">Loading</span>
       <span className="sr-only">Loading…</span>
     </div>
   )
