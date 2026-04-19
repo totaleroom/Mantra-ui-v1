@@ -30,20 +30,7 @@ EXCEPTION
 END $$;
 
 -- ---------------------------------------------------------------
--- 1. USERS & AUTH
--- ---------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS users (
-    id          BIGSERIAL PRIMARY KEY,
-    email       TEXT        NOT NULL UNIQUE,
-    password    TEXT        NOT NULL,
-    role        user_role   NOT NULL DEFAULT 'CLIENT_ADMIN',
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);
-
--- ---------------------------------------------------------------
--- 2. CLIENTS (TENANTS)
+-- 1. CLIENTS (TENANTS) — created first because users.client_id FKs here
 -- ---------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS clients (
     id            BIGSERIAL PRIMARY KEY,
@@ -53,6 +40,31 @@ CREATE TABLE IF NOT EXISTS clients (
     is_active     BOOLEAN NOT NULL DEFAULT TRUE,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- ---------------------------------------------------------------
+-- 2. USERS & AUTH
+-- ---------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS users (
+    id          BIGSERIAL PRIMARY KEY,
+    email       TEXT        NOT NULL UNIQUE,
+    password    TEXT        NOT NULL,
+    role        user_role   NOT NULL DEFAULT 'CLIENT_ADMIN',
+    -- ClientID is NULL only for SUPER_ADMIN. CLIENT_ADMIN / STAFF must
+    -- belong to exactly one tenant; all tenant-scoped endpoints reject
+    -- mismatched JWT.clientId vs path :id.
+    client_id              BIGINT  REFERENCES clients(id) ON DELETE SET NULL,
+    must_change_password   BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_email     ON users (email);
+CREATE INDEX IF NOT EXISTS idx_users_client_id ON users (client_id);
+
+-- Lightweight migration for existing deployments: add the columns if the
+-- table was created by an older init.sql. IF NOT EXISTS keeps this safe
+-- to re-run. (Do NOT backfill client_id; operators must do that manually.)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS client_id BIGINT REFERENCES clients(id) ON DELETE SET NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- ---------------------------------------------------------------
 -- 3. AI PROVIDERS & FALLBACK CREDENTIALS
@@ -84,8 +96,23 @@ CREATE TABLE IF NOT EXISTS client_ai_configs (
     temperature      NUMERIC(3,2) NOT NULL DEFAULT 0.70,
     memory_ttl_days  INTEGER      NOT NULL DEFAULT 4,
     CONSTRAINT temperature_range CHECK (temperature >= 0 AND temperature <= 2),
-    CONSTRAINT memory_ttl_range  CHECK (memory_ttl_days >= 1 AND memory_ttl_days <= 4)
+    -- Widened from <=4 to <=365 so commercial tiers can offer longer
+    -- memory. The handler layer still enforces a per-plan cap; the DB
+    -- constraint is just the outer sanity bound to keep typos (30000)
+    -- from landing in the row.
+    CONSTRAINT memory_ttl_range  CHECK (memory_ttl_days >= 1 AND memory_ttl_days <= 365)
 );
+
+-- Relax the constraint on pre-existing deployments (no-op on fresh DBs
+-- because the CHECK above already permits the wider range).
+DO $$
+BEGIN
+    ALTER TABLE client_ai_configs DROP CONSTRAINT IF EXISTS memory_ttl_range;
+    ALTER TABLE client_ai_configs ADD CONSTRAINT memory_ttl_range
+        CHECK (memory_ttl_days >= 1 AND memory_ttl_days <= 365);
+EXCEPTION
+    WHEN undefined_table THEN NULL;
+END $$;
 
 -- ---------------------------------------------------------------
 -- 5. WHATSAPP INSTANCES (MULTI-PROVIDER GATEWAY)
@@ -280,18 +307,30 @@ CREATE TABLE IF NOT EXISTS system_diagnoses (
 -- After first login, CHANGE THE PASSWORD via UI/API or by direct UPDATE.
 DO $$
 DECLARE
-    user_count INTEGER;
+    user_count  INTEGER;
+    demo_client_id BIGINT;
 BEGIN
     SELECT COUNT(*) INTO user_count FROM users;
 
     IF user_count = 0 THEN
-        INSERT INTO users (email, password, role) VALUES
-            ('admin@mantra.ai', '$2a$10$GNm/LleSefP5IS3.mbmNWuiHGOZGKTnDdEKrtdu/KBoZk.VO0XIby', 'SUPER_ADMIN'),
-            ('demo@mantra.ai',  '$2a$10$Id0AHtQpCETR7PChpQS08eQOjd65/zxuYeDEfy6If7Dc2tzZ1teuO', 'CLIENT_ADMIN');
+        -- Create a demo tenant so the bootstrapped CLIENT_ADMIN has somewhere
+        -- to live. Without this the JWT.clientId would be NULL and every
+        -- tenant-scoped endpoint would 403 them.
+        INSERT INTO clients (name, token_limit)
+        VALUES ('Demo Tenant', 1000)
+        RETURNING id INTO demo_client_id;
 
-        RAISE NOTICE '[Mantra] Bootstrapped default users. CHANGE PASSWORDS immediately after first login!';
+        -- must_change_password=TRUE forces both seeded accounts through
+        -- /api/auth/change-password before any other endpoint succeeds.
+        -- This defangs the well-known default credentials the hash encodes.
+        INSERT INTO users (email, password, role, client_id, must_change_password) VALUES
+            ('admin@mantra.ai', '$2a$10$GNm/LleSefP5IS3.mbmNWuiHGOZGKTnDdEKrtdu/KBoZk.VO0XIby', 'SUPER_ADMIN', NULL, TRUE),
+            ('demo@mantra.ai',  '$2a$10$Id0AHtQpCETR7PChpQS08eQOjd65/zxuYeDEfy6If7Dc2tzZ1teuO', 'CLIENT_ADMIN', demo_client_id, TRUE);
+
+        RAISE NOTICE '[Mantra] Bootstrapped default users (must_change_password=TRUE).';
         RAISE NOTICE '[Mantra]   admin@mantra.ai / MantraAdmin2024!  (SUPER_ADMIN)';
-        RAISE NOTICE '[Mantra]   demo@mantra.ai  / admin123           (CLIENT_ADMIN)';
+        RAISE NOTICE '[Mantra]   demo@mantra.ai  / admin123           (CLIENT_ADMIN, tenant %)', demo_client_id;
+        RAISE NOTICE '[Mantra] First login MUST rotate the password via /api/auth/change-password.';
     ELSE
         RAISE NOTICE '[Mantra] Users table already populated (% rows) — skipping bootstrap.', user_count;
     END IF;

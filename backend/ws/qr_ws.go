@@ -47,6 +47,11 @@ func QRCodeWebSocket(c *websocket.Conn) {
 
 	go func() {
 		defer close(done)
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[QRWS] PANIC in reader goroutine for %s: %v", instanceName, r)
+			}
+		}()
 		for {
 			_, msgBytes, err := c.ReadMessage()
 			if err != nil {

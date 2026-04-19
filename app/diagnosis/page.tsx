@@ -21,6 +21,7 @@ import {
 } from 'lucide-react'
 import type { SystemDiagnosis } from '@/lib/types'
 import { apiClient } from '@/lib/api-client'
+import { PreflightPanel } from '@/components/diagnosis/preflight-panel'
 
 export default function DiagnosisPage() {
   type DiagnosisService = SystemDiagnosis & {
@@ -43,7 +44,12 @@ export default function DiagnosisPage() {
   const refreshServices = async () => {
     setIsRefreshing(true)
     try {
-      const data = await apiClient.get<SystemDiagnosis[]>('/api/system/diagnosis')
+      // Backend shape: { services: SystemDiagnosis[], overall: 'healthy' | ... }
+      // The SUPER_ADMIN-gated endpoint is /api/system/health (not /diagnosis).
+      const resp = await apiClient.get<{ services: SystemDiagnosis[]; overall: string }>(
+        '/api/system/health'
+      )
+      const data = resp.services ?? []
       const mapped = data.map((s) => ({
         ...s,
         description:
@@ -79,6 +85,15 @@ export default function DiagnosisPage() {
       description="Control room for infrastructure health monitoring"
     >
       <div className="space-y-6">
+        {/*
+          Preflight / "Blackbox" panel — comprehensive health report from
+          GET /api/system/preflight. Rendered first because it answers the
+          single most important question: "is anything broken right now?".
+          The legacy service-health cards below remain for deep-dive
+          latency inspection.
+        */}
+        <PreflightPanel />
+
         {/* Overall Health Banner */}
         <Card
           className={`border-2 ${

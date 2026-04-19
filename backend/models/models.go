@@ -43,7 +43,13 @@ type User struct {
 	Email        string    `json:"email" gorm:"uniqueIndex;not null"`
 	PasswordHash string    `json:"-" gorm:"column:password;not null"`
 	Role         UserRole  `json:"role" gorm:"type:text;default:'CLIENT_ADMIN'"`
-	CreatedAt    time.Time `json:"createdAt"`
+	// ClientID scopes a CLIENT_ADMIN / STAFF user to a single tenant. NULL
+	// is only legal for SUPER_ADMIN (cross-tenant operator). Tenant-scoped
+	// handlers MUST reject requests whose claim.ClientID ≠ path :id unless
+	// the user is SUPER_ADMIN.
+	ClientID            *uint     `json:"clientId" gorm:"index"`
+	MustChangePassword  bool      `json:"mustChangePassword" gorm:"default:false"`
+	CreatedAt           time.Time `json:"createdAt"`
 }
 
 type Client struct {

@@ -16,8 +16,14 @@ func GetAIProviders(c *fiber.Ctx) error {
 	if database.DB == nil {
 		return c.JSON([]interface{}{})
 	}
+	// Tenants see their own providers + any shared (client_id IS NULL)
+	// ones. The frontend should render shared rows as read-only.
+	q, err := ScopedDBWithShared(c, database.DB.Model(&models.AIProvider{}), "client_id")
+	if err != nil {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "tenant scope missing", "code": "FORBIDDEN"})
+	}
 	var providers []models.AIProvider
-	if err := database.DB.Order("priority asc").Find(&providers).Error; err != nil {
+	if err := q.Order("priority asc").Find(&providers).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to fetch providers",
 			"code":  "INTERNAL_ERROR",
@@ -36,8 +42,19 @@ func GetAIProvider(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "Database not connected"})
 	}
 
+	scope, scopeErr := EffectiveTenantScope(c)
+	if scopeErr != nil {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "tenant scope missing", "code": "FORBIDDEN"})
+	}
+
 	var p models.AIProvider
 	if err := database.DB.First(&p, id).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Provider not found", "code": "NOT_FOUND"})
+	}
+	// Non-SUPER_ADMIN may only read their own tenant's providers.
+	// Providers with NULL client_id (system-wide shared creds) are
+	// visible to everyone but cannot be re-assigned by a tenant.
+	if scope != nil && p.ClientID != nil && *p.ClientID != *scope {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Provider not found", "code": "NOT_FOUND"})
 	}
 	return c.JSON(p)
@@ -68,8 +85,19 @@ func CreateAIProvider(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "Database not connected"})
 	}
 
+	// Non-SUPER_ADMIN callers cannot assign a provider to another tenant
+	// (or to the NULL system-shared bucket); force the claim's clientId.
+	scope, scopeErr := EffectiveTenantScope(c)
+	if scopeErr != nil {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "tenant scope missing", "code": "FORBIDDEN"})
+	}
+	effClient := req.ClientID
+	if scope != nil {
+		effClient = scope
+	}
+
 	p := models.AIProvider{
-		ClientID:     req.ClientID,
+		ClientID:     effClient,
 		ProviderName: req.ProviderName,
 		APIKey:       req.APIKey,
 		BaseURL:      req.BaseURL,
@@ -93,8 +121,17 @@ func UpdateAIProvider(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "Database not connected"})
 	}
 
+	scope, scopeErr := EffectiveTenantScope(c)
+	if scopeErr != nil {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "tenant scope missing", "code": "FORBIDDEN"})
+	}
+
 	var p models.AIProvider
 	if err := database.DB.First(&p, id).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Provider not found", "code": "NOT_FOUND"})
+	}
+	// Tenants may only mutate their own providers.
+	if scope != nil && (p.ClientID == nil || *p.ClientID != *scope) {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Provider not found", "code": "NOT_FOUND"})
 	}
 
@@ -141,8 +178,21 @@ func DeleteAIProvider(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "Database not connected"})
 	}
 
-	if err := database.DB.Delete(&models.AIProvider{}, id).Error; err != nil {
+	scope, scopeErr := EffectiveTenantScope(c)
+	if scopeErr != nil {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "tenant scope missing", "code": "FORBIDDEN"})
+	}
+
+	del := database.DB.Where("id = ?", id)
+	if scope != nil {
+		del = del.Where("client_id = ?", *scope)
+	}
+	res := del.Delete(&models.AIProvider{})
+	if res.Error != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to delete"})
+	}
+	if res.RowsAffected == 0 {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Provider not found", "code": "NOT_FOUND"})
 	}
 	return c.JSON(fiber.Map{"success": true})
 }
@@ -165,8 +215,17 @@ func UpdateProviderPriorities(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "Database not connected"})
 	}
 
+	scope, scopeErr := EffectiveTenantScope(c)
+	if scopeErr != nil {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "tenant scope missing", "code": "FORBIDDEN"})
+	}
+
 	for _, item := range req.Priorities {
-		database.DB.Model(&models.AIProvider{}).Where("id = ?", item.ID).Update("priority", item.Priority)
+		q := database.DB.Model(&models.AIProvider{}).Where("id = ?", item.ID)
+		if scope != nil {
+			q = q.Where("client_id = ?", *scope)
+		}
+		q.Update("priority", item.Priority)
 	}
 	return c.JSON(fiber.Map{"success": true})
 }
@@ -175,6 +234,21 @@ func TestAIProvider(c *fiber.Ctx) error {
 	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid ID"})
+	}
+
+	// Verify tenant owns this provider before probing (otherwise we'd
+	// effectively burn someone else's tenant's API quota).
+	if database.DB != nil {
+		scope, scopeErr := EffectiveTenantScope(c)
+		if scopeErr != nil {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "tenant scope missing", "code": "FORBIDDEN"})
+		}
+		if scope != nil {
+			var p models.AIProvider
+			if err := database.DB.First(&p, id).Error; err != nil || p.ClientID == nil || *p.ClientID != *scope {
+				return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Provider not found", "code": "NOT_FOUND"})
+			}
+		}
 	}
 
 	latency, testErr := aiService.TestProvider(uint(id))
@@ -198,8 +272,14 @@ func GetAllModels(c *fiber.Ctx) error {
 		return c.JSON([]interface{}{})
 	}
 
-	var providers []models.AIProvider
-	database.DB.Where("is_active = ?", true).Find(&providers)
+	// Guard: enforce a known scope so the public catalog isn't served
+	// to an unauthenticated caller (defense in depth; the route group
+	// already runs JWTProtected). We don't use the scope for filtering
+	// — the model catalog is provider-neutral — but we do fail closed
+	// if the principal is malformed.
+	if _, err := EffectiveTenantScope(c); err != nil {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "tenant scope missing", "code": "FORBIDDEN"})
+	}
 
 	staticModels := []models.AIModel{
 		{ID: "gpt-4-turbo", Name: "GPT-4 Turbo", Provider: "OpenAI", ContextLength: 128000, Pricing: models.ModelPricing{Input: 0.01, Output: 0.03}},
@@ -224,8 +304,19 @@ func GetProviderModels(c *fiber.Ctx) error {
 		return c.JSON([]interface{}{})
 	}
 
+	scope, scopeErr := EffectiveTenantScope(c)
+	if scopeErr != nil {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "tenant scope missing", "code": "FORBIDDEN"})
+	}
+
 	var p models.AIProvider
 	if err := database.DB.First(&p, id).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Provider not found"})
+	}
+	// Tenants may fetch models from their OWN providers and from any
+	// shared (client_id IS NULL) provider. Reject only cross-tenant
+	// reads — that's the IDOR surface.
+	if scope != nil && p.ClientID != nil && *p.ClientID != *scope {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Provider not found"})
 	}
 

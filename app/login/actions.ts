@@ -35,6 +35,17 @@ export async function loginAction(
     path: '/',
   })
 
+  // Force seeded / bootstrapped accounts straight to /change-password.
+  // The edge middleware would do this too on the next request, but
+  // hopping there from the server action avoids a flash of the
+  // dashboard shell loading endpoints that will 428.
+  const mustChange =
+    (result.user as { mustChangePassword?: boolean } | undefined)
+      ?.mustChangePassword === true
+  if (mustChange) {
+    redirect('/change-password')
+  }
+
   const redirectTo = formData.get('redirectTo')?.toString() || '/'
   redirect(redirectTo)
 }

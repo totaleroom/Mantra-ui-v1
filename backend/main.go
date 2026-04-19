@@ -79,6 +79,12 @@ func main() {
 
 	routes.Setup(app)
 
+	// Pretty-printed boot checklist — also FATALs on misconfigured
+	// production env (empty JWT_SECRET, empty WEBHOOK_SECRET, zero
+	// users, etc). This guards against "Coolify reports healthy but
+	// the app is actually broken" situations.
+	PrintBootBanner()
+
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 

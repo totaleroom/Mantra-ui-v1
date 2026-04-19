@@ -55,8 +55,17 @@ export interface LoginResult {
  * Dev-only: issue a locally-signed JWT when backend is unreachable.
  * Active only when DEV_AUTH_BYPASS=true AND NODE_ENV !== 'production'.
  * Accepts any of the seed accounts (admin@mantra.ai, demo@mantra.ai) + any password.
+ *
+ * Belt-and-suspenders: the caller guards on serverConfig.devAuthBypass,
+ * but we ALSO re-check NODE_ENV inside this function so there is no
+ * possible code path that emits a bypass token in production even if a
+ * future refactor forgets the outer check.
  */
 async function devAuthIssue(email: string): Promise<LoginResult> {
+  if (process.env.NODE_ENV === 'production') {
+    return { ok: false, error: 'dev auth is disabled in production' }
+  }
+
   const secret = serverConfig?.jwtSecret
   if (!secret) {
     return { ok: false, error: '[DEV] JWT_SECRET not set in .env' }
@@ -65,9 +74,13 @@ async function devAuthIssue(email: string): Promise<LoginResult> {
   const role: MantraSession['role'] =
     email === 'admin@mantra.ai' ? 'SUPER_ADMIN' : 'CLIENT_ADMIN'
   const userId = email === 'admin@mantra.ai' ? '1' : '2'
+  // Dev bypass cannot possibly know the real tenant mapping; assign
+  // the seeded demo tenant (id=1 created by init.sql's bootstrap block)
+  // for CLIENT_ADMIN. SUPER_ADMIN remains tenant-agnostic.
+  const clientId = role === 'SUPER_ADMIN' ? undefined : 1
 
   // Match backend session duration (see backend/handlers/auth.go:sessionDuration).
-  const token = await new SignJWT({ userId, email, role })
+  const token = await new SignJWT({ userId, email, role, clientId, mcp: false })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setNotBefore(Math.floor(Date.now() / 1000))

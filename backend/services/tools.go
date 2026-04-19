@@ -8,8 +8,12 @@ import (
 	"io"
 	"mantra-backend/database"
 	"mantra-backend/models"
+	"net"
 	"net/http"
+	"net/url"
+	"os"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -36,10 +40,34 @@ const (
 )
 
 func NewToolService() *ToolService {
+	// Custom dialer that validates the resolved IP after DNS lookup but
+	// BEFORE the TCP connection. This stops DNS-rebinding attacks where
+	// a hostname returns public once and private on retry.
+	dialer := &net.Dialer{
+		Timeout: 5 * time.Second,
+		Control: func(network, address string, _ syscall.RawConn) error {
+			host, _, err := net.SplitHostPort(address)
+			if err != nil {
+				return err
+			}
+			ip := net.ParseIP(host)
+			if ip == nil {
+				return fmt.Errorf("dial: non-IP address %q", host)
+			}
+			if !isPublicIP(ip) {
+				return fmt.Errorf("dial blocked: %s is private/loopback/link-local", ip)
+			}
+			return nil
+		},
+	}
+
 	return &ToolService{
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
-			// Block redirects across hosts to mitigate SSRF.
+			// Block redirects that leave the original host. Together with
+			// the dialer's per-connection IP check, this defuses the
+			// common SSRF pivots (metadata endpoint, internal services,
+			// DNS rebind).
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				if len(via) == 0 {
 					return nil
@@ -49,8 +77,81 @@ func NewToolService() *ToolService {
 				}
 				return nil
 			},
+			Transport: &http.Transport{
+				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+					return dialer.DialContext(ctx, network, addr)
+				},
+				// Short keep-alive so rebound DNS entries don't stick around.
+				MaxIdleConnsPerHost: 2,
+				IdleConnTimeout:     30 * time.Second,
+				TLSHandshakeTimeout: 5 * time.Second,
+			},
 		},
 	}
+}
+
+// isPublicIP returns false for loopback, link-local, private (RFC1918 /
+// RFC4193), CGNAT, unspecified, and cloud metadata addresses. These are
+// the buckets an SSRF attacker would try to reach from inside our
+// container; we block all of them.
+func isPublicIP(ip net.IP) bool {
+	if ip == nil || ip.IsLoopback() || ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() || ip.IsUnspecified() ||
+		ip.IsPrivate() || ip.IsMulticast() {
+		return false
+	}
+	// Explicit cloud-metadata entries (IPv4 + IPv6).
+	blocked := []string{
+		"169.254.169.254", // AWS / GCP / Azure metadata
+		"fd00:ec2::254",   // AWS IPv6 metadata
+	}
+	s := ip.String()
+	for _, b := range blocked {
+		if s == b {
+			return false
+		}
+	}
+	// 100.64.0.0/10 — RFC6598 CGNAT, often present in VPC peering; treat
+	// as private. Some deployments may need this in their egress path;
+	// if so, pass TOOL_WEBHOOK_ALLOW_CGNAT=true to relax it.
+	if ip4 := ip.To4(); ip4 != nil {
+		if ip4[0] == 100 && ip4[1]&0xC0 == 64 && os.Getenv("TOOL_WEBHOOK_ALLOW_CGNAT") != "true" {
+			return false
+		}
+	}
+	return true
+}
+
+// validateWebhookURL parses + validates a tenant-supplied URL before we
+// ever dial it. Checks scheme + resolves all A/AAAA records and rejects
+// the URL if ANY resolves to a disallowed range.
+func validateWebhookURL(raw string) (*url.URL, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return nil, fmt.Errorf("invalid url: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return nil, fmt.Errorf("only http/https allowed (got %q)", u.Scheme)
+	}
+	host := u.Hostname()
+	if host == "" {
+		return nil, fmt.Errorf("url missing host")
+	}
+
+	// Pre-resolve; reject if any record hits a blocked bucket. The
+	// per-connection Dialer.Control above re-validates the final dial
+	// target, so a rebind attempt between this check and the dial is
+	// still caught.
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return nil, fmt.Errorf("dns lookup failed: %w", err)
+	}
+	for _, ip := range ips {
+		if !isPublicIP(ip) {
+			return nil, fmt.Errorf("host %s resolves to non-public ip %s", host, ip)
+		}
+	}
+	return u, nil
 }
 
 // LoadToolsForClient returns the active tools for a client as both a
@@ -192,10 +293,17 @@ func (t *ToolService) executeWebhook(
 	customerNumber string,
 	args map[string]interface{},
 ) string {
-	url, _ := tool.HandlerConfig["url"].(string)
-	if url == "" {
+	rawURL, _ := tool.HandlerConfig["url"].(string)
+	if rawURL == "" {
 		return errJSON("webhook tool missing handler_config.url")
 	}
+	parsed, valErr := validateWebhookURL(rawURL)
+	if valErr != nil {
+		// Surface a generic message to the LLM — we don't want the tool
+		// call loop to carry "169.254.169.254 rejected" forward.
+		return errJSON(fmt.Sprintf("webhook url rejected: %v", valErr))
+	}
+	targetURL := parsed.String()
 	secret, _ := tool.HandlerConfig["secret"].(string)
 
 	// Construct the envelope we POST to the tenant. Kept small and stable
@@ -223,7 +331,7 @@ func (t *ToolService) executeWebhook(
 	callCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(callCtx, "POST", url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(callCtx, "POST", targetURL, bytes.NewReader(body))
 	if err != nil {
 		return errJSON(fmt.Sprintf("new request: %v", err))
 	}

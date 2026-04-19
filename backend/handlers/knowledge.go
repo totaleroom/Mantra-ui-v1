@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"fmt"
 	"mantra-backend/database"
 	"mantra-backend/models"
@@ -140,12 +141,39 @@ func UploadKnowledgeChunks(c *fiber.Ctx) error {
 	if len(chunks) == 0 {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "text produced no chunks"})
 	}
+	// Hard cap on chunks per single upload. The real cost gate is
+	// Budget.Check below, but this catches obvious abuse early without
+	// ever touching the embedding provider.
+	const maxChunksPerUpload = 500
+	if len(chunks) > maxChunksPerUpload {
+		return c.Status(fiber.StatusRequestEntityTooLarge).JSON(fiber.Map{
+			"error": fmt.Sprintf("too many chunks (%d) — split into multiple uploads (max %d each)", len(chunks), maxChunksPerUpload),
+			"code":  "CHUNK_LIMIT",
+		})
+	}
+
+	// Estimate token spend and gate on per-day tenant budget. Fails
+	// open if Redis is down (budget is a cost guardrail, not authz).
+	// Default daily cap is 200 000 embed tokens ≈ $0.04 on
+	// text-embedding-3-small; override with LIMIT_EMBED_TOKENS env var.
+	var estTokens int64
+	for _, chunk := range chunks {
+		estTokens += int64(approxTokens(chunk))
+	}
+	budget := services.NewBudget()
+	if err := budget.Check(c.Context(), clientID, "embed_tokens", estTokens, 200_000); err != nil {
+		return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
+			"error": err.Error(),
+			"code":  "BUDGET_EXCEEDED",
+		})
+	}
 
 	embed := services.NewEmbeddingService()
 	vectors, provider, err := embed.Embed(&clientID, body.Model, chunks)
 	if err != nil {
 		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{"error": err.Error()})
 	}
+	budget.Add(c.Context(), clientID, "embed_tokens", estTokens)
 
 	// Marshal metadata — GORM's jsonb serializer expects a Go value;
 	// we use raw SQL for the INSERT because of pgvector, so we build
@@ -495,5 +523,4 @@ func normalizeStringSlice(in []string) []string {
 		out = append(out, s)
 	}
 	return out
-}
 }

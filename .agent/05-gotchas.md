@@ -197,3 +197,99 @@ origin to `font-src` directive.
 **Fix**: Never commit `package-lock.json` or `yarn.lock`. `next.config.mjs`
 sets `turbopack.root` to silence false-positive multi-lockfile warnings if
 the user has stray lockfiles elsewhere.
+
+---
+
+## G15 — Every dashboard API call returns 401 after login (Phase B era)
+
+**Symptom**: User can log in (cookie appears in DevTools), but every
+subsequent page loads empty and the Network tab shows `/api/...` calls
+returning **401 Unauthorized**. `mantra_session` cookie is present on
+the frontend origin, but not the backend origin.
+
+**Cause**: A caller is using the backend's **absolute URL** (e.g.
+`http://localhost:3001/api/clients`) from the browser. That's
+cross-origin vs the frontend's `app:5000`; the HttpOnly cookie is
+scoped to the frontend origin, so it's never sent upstream.
+
+**Fix**: Always call `/api/...` **relative** from the browser. The
+Next.js `rewrites()` in `next.config.mjs` will proxy it server-side to
+`BACKEND_INTERNAL_URL`. `lib/api-client.ts` is already correct — make
+sure any ad-hoc `fetch()` you add follows suit. Server-side fetches
+(Server Actions, RSC) may use `BACKEND_INTERNAL_URL` directly.
+
+**Regression test idea**: grep `fetch\\(.*http` across `app/`, `components/`,
+`hooks/`. Every hit should be in a server-only file.
+
+---
+
+## G16 — `428 PASSWORD_CHANGE_REQUIRED` loop, user cannot escape
+
+**Symptom**: Seeded account (`admin@mantra.ai` / `demo@mantra.ai`)
+logs in, dashboard is blank, Network tab shows every `/api/*` call
+returning `428`. Clicking anything does nothing.
+
+**Cause**: `middleware.BlockUntilPasswordChanged()` (backend) is doing
+its job. The user must rotate through `/change-password` BEFORE any
+tenant-scoped endpoint responds. Two things can break this:
+
+1. `/change-password` page is missing or 404s.
+2. The rotation form fires but the backend fails to mint + set a fresh
+   JWT, so the browser keeps sending the `mcp=true` cookie.
+
+**Fix**:
+- Ensure `app/change-password/page.tsx` exists and renders the form.
+- Ensure `backend/handlers/auth.go::ChangePassword` signs a new JWT,
+  sets it via `c.Cookie(...)`, AND includes the `token` in the JSON
+  body so the server action can also rotate the Next-side cookie.
+- `middleware.ts` must decode the `mcp` claim and let `/change-password`
+  through when mcp=true AND bounce OFF of `/change-password` when
+  mcp=false. Both directions matter.
+
+**Prevention**: Don't loosen `BlockUntilPasswordChanged` "just for
+testing". If dev needs to skip, set `must_change_password = FALSE` on
+the specific row:
+```sql
+UPDATE users SET must_change_password = FALSE WHERE email = 'you@dev.local';
+```
+
+---
+
+## G17 — Tenant sees "No AI providers" even though SUPER_ADMIN configured one
+
+**Symptom**: CLIENT_ADMIN logs in, goes to AI Hub, list is empty.
+SUPER_ADMIN sees 3 providers in the same DB.
+
+**Cause**: SUPER_ADMIN created providers with `client_id = NULL` to
+share them platform-wide. The old `ScopedDB` only matched
+`client_id = $scope` — NULLs were filtered out.
+
+**Fix (Phase B already applied)**: `GetAIProviders` uses
+`ScopedDBWithShared()` which emits `client_id = $scope OR client_id IS NULL`.
+Mutation endpoints still use strict `ScopedDB` so a tenant can't
+clobber the shared row.
+
+**If you add a new resource type where tenants should also see shared
+rows**: copy the pattern. Otherwise default to `ScopedDB` (stricter).
+
+---
+
+## G18 — `docker compose up` succeeds but backend logs "bootstrap skipped"
+
+**Symptom**: Fresh VPS, first deploy, `init.sql` runs, but you never
+see the `[Mantra] Bootstrapped default users` notice.
+
+**Cause**: `init.sql` guards the bootstrap with
+`IF user_count = 0 THEN ...`. If Postgres has ANY row in `users` —
+even from a botched previous run — the block is skipped.
+
+**Fix**: On a Coolify deploy where you want a clean slate:
+```bash
+docker compose down -v    # ⚠️ deletes postgres_data volume
+docker compose up -d
+```
+On production where you can't wipe: insert the two users manually
+from the seeds block (comments above it show the bcrypt hashes).
+
+**Never** do this on a production DB that already has real tenants
+without backing up first (`scripts/backup-postgres.sh`).

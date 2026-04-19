@@ -7,6 +7,23 @@ const isProd = process.env.NODE_ENV === 'production'
 
 const apiOrigin = process.env.NEXT_PUBLIC_API_URL || ''
 const wsOrigin = process.env.NEXT_PUBLIC_WS_URL || ''
+const evoOrigin = process.env.NEXT_PUBLIC_EVO_URL || ''
+
+// connect-src allowlist: explicit origins only. Previous version included
+// bare `ws:` / `wss:` / `https:` which matched ANY origin and defeated the
+// point of the whitelist. If you legitimately need a third-party API in
+// the browser (analytics, Sentry, etc.) add its origin here.
+const connectSrc = [
+  `'self'`,
+  apiOrigin,
+  wsOrigin,
+  evoOrigin,
+  // Dev-only: allow webpack-dev-server HMR over localhost.
+  isProd ? '' : 'ws://localhost:*',
+  isProd ? '' : 'http://localhost:*',
+]
+  .filter(Boolean)
+  .join(' ')
 
 const csp = [
   `default-src 'self'`,
@@ -18,7 +35,7 @@ const csp = [
   `font-src 'self' data:`,
   `style-src 'self' 'unsafe-inline'`,
   `script-src 'self'${isProd ? '' : " 'unsafe-eval' 'unsafe-inline'"}`,
-  `connect-src 'self' ${apiOrigin} ${wsOrigin} ws: wss: https:`.trim(),
+  `connect-src ${connectSrc}`,
   `upgrade-insecure-requests`,
 ].join('; ')
 
@@ -56,6 +73,38 @@ const nextConfig = {
 
   // Allow Windsurf browser preview and local hosts during dev.
   allowedDevOrigins: ['localhost', '127.0.0.1', '0.0.0.0'],
+
+  // ─────────────────────────────────────────────────────────────
+  // Reverse-proxy /api/* to the Go Fiber backend.
+  //
+  // Why this exists: the browser's session cookie is set on the
+  // Next.js origin (e.g. https://app.example.com). If the frontend
+  // then fetched https://api.example.com directly, the browser would
+  // refuse to attach the cookie (cross-origin, HttpOnly, SameSite=Lax).
+  // By rewriting same-origin `/api/*` → backend we keep the cookie
+  // path simple: one origin, one cookie, zero CORS pain.
+  //
+  // `afterFiles` means Next.js route handlers (`app/api/...`) take
+  // precedence, so `/api/auth/logout` and `/api/whatsapp/providers`
+  // stay local. Everything else falls through to the Go backend.
+  //
+  // BACKEND_INTERNAL_URL is resolved at runtime on the Node server,
+  // so it works equally in `next dev`, `next start`, and inside the
+  // Docker container (where it'll be http://backend:3001).
+  async rewrites() {
+    const backend =
+      process.env.BACKEND_INTERNAL_URL ||
+      process.env.NEXT_PUBLIC_API_URL ||
+      'http://localhost:3001'
+    return {
+      afterFiles: [
+        {
+          source: '/api/:path*',
+          destination: `${backend}/api/:path*`,
+        },
+      ],
+    }
+  },
 
   async headers() {
     return [
@@ -102,9 +151,12 @@ const nextConfig = {
     // Dev-only: whitelist localhost origins so Server Actions don't 403
     // when accessed through a browser-preview proxy (Windsurf, VSCode,
     // etc. use dynamic ports on 127.0.0.1). Production keeps strict
-    // same-origin checks. We generate the full ephemeral port range
-    // (49152-65535 per IANA) for both 127.0.0.1 and localhost so any
-    // proxy session Just Works without edits.
+    // same-origin checks.
+    //
+    // Previous revision pre-generated 32k entries for the full ephemeral
+    // port range (49152-65535 × 2 hostnames) which shipped ~33k strings
+    // into Next's in-memory config. That was wasteful; Next 14+ accepts
+    // regex-flavoured entries that cover the whole range in one line.
     serverActions: isProd
       ? undefined
       : {
@@ -112,16 +164,11 @@ const nextConfig = {
             'localhost:5000',
             '127.0.0.1:5000',
             '0.0.0.0:5000',
-            // Full IANA ephemeral range (49152-65535) for both host names.
-            // ~33k strings total; negligible for dev.
-            ...Array.from({ length: 65535 - 49152 + 1 }, (_, i) => {
-              const port = 49152 + i
-              return `127.0.0.1:${port}`
-            }),
-            ...Array.from({ length: 65535 - 49152 + 1 }, (_, i) => {
-              const port = 49152 + i
-              return `localhost:${port}`
-            }),
+            // Ephemeral ports (49152-65535 per IANA) for both host names.
+            // Matches any 5-digit port in the ephemeral range without
+            // the 32k string array we used to carry.
+            'localhost:*',
+            '127.0.0.1:*',
           ],
           allowedForwardedHosts: [
             'localhost:5000',

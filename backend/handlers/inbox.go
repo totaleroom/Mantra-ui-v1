@@ -6,7 +6,32 @@ import (
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
+	"gorm.io/gorm"
 )
+
+// scopedInboxQuery returns a base query pre-filtered to the caller's
+// tenant (or unfiltered for SUPER_ADMIN). The `?clientId=` query param
+// is ONLY honored for SUPER_ADMIN; every other role is pinned to their
+// JWT.clientId so a STAFF of tenant A cannot peek into tenant B by
+// guessing a clientId value.
+func scopedInboxQuery(c *fiber.Ctx) (*gorm.DB, error) {
+	role, _ := c.Locals("role").(string)
+	claimClientID, _ := c.Locals("clientID").(*uint)
+
+	query := database.DB.Model(&models.InboxMessage{})
+
+	if role != string(models.UserRoleSuperAdmin) {
+		if claimClientID == nil {
+			return nil, fiber.ErrForbidden
+		}
+		query = query.Where("inbox_messages.client_id = ?", *claimClientID)
+	} else if cidStr := c.Query("clientId"); cidStr != "" {
+		if cid, err := strconv.ParseUint(cidStr, 10, 64); err == nil {
+			query = query.Where("inbox_messages.client_id = ?", cid)
+		}
+	}
+	return query, nil
+}
 
 func GetInboxMessages(c *fiber.Ctx) error {
 	if database.DB == nil {
@@ -22,21 +47,22 @@ func GetInboxMessages(c *fiber.Ctx) error {
 		limit = 50
 	}
 
-	clientIDStr := c.Query("clientId")
 	direction := c.Query("direction")
 	search := c.Query("search")
 
-	query := database.DB.Model(&models.InboxMessage{}).
+	query, err := scopedInboxQuery(c)
+	if err != nil {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"error": "tenant scope missing",
+			"code":  "FORBIDDEN",
+		})
+	}
+	query = query.
 		Preload("Client").
 		Order("timestamp desc").
 		Limit(limit).
 		Offset(offset)
 
-	if clientIDStr != "" {
-		if cid, err := strconv.ParseUint(clientIDStr, 10, 64); err == nil {
-			query = query.Where("inbox_messages.client_id = ?", cid)
-		}
-	}
 	if direction == "inbound" || direction == "outbound" {
 		query = query.Where("direction = ?", direction)
 	}
@@ -71,15 +97,27 @@ func GetInboxStats(c *fiber.Ctx) error {
 		})
 	}
 
-	var total int64
-	var inbound int64
-	var outbound int64
-	var aiProcessed int64
+	// Build three base queries scoped identically so stats match messages.
+	base, err := scopedInboxQuery(c)
+	if err != nil {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"error": "tenant scope missing",
+			"code":  "FORBIDDEN",
+		})
+	}
 
-	database.DB.Model(&models.InboxMessage{}).Count(&total)
-	database.DB.Model(&models.InboxMessage{}).Where("direction = ?", "inbound").Count(&inbound)
-	database.DB.Model(&models.InboxMessage{}).Where("direction = ?", "outbound").Count(&outbound)
-	database.DB.Model(&models.InboxMessage{}).Where("model_used IS NOT NULL AND model_used != ''").Count(&aiProcessed)
+	var total, inbound, outbound, aiProcessed int64
+	base.Count(&total)
+	// .Count() consumes the query; re-derive for each filter.
+	if q, err := scopedInboxQuery(c); err == nil {
+		q.Where("direction = ?", "inbound").Count(&inbound)
+	}
+	if q, err := scopedInboxQuery(c); err == nil {
+		q.Where("direction = ?", "outbound").Count(&outbound)
+	}
+	if q, err := scopedInboxQuery(c); err == nil {
+		q.Where("model_used IS NOT NULL AND model_used != ''").Count(&aiProcessed)
+	}
 
 	return c.JSON(fiber.Map{
 		"total":       total,

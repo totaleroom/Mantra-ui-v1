@@ -94,7 +94,7 @@ func Load() {
 // variable is missing. Called automatically by Load() in production.
 func validateRequired() {
 	required := []struct{ key, val, desc string }{
-		{"JWT_SECRET / JWT_SECRET", C.JWTSecret, "JWT signing secret"},
+		{"JWT_SECRET", C.JWTSecret, "JWT signing secret"},
 		{"DATABASE_URL", C.DatabaseURL, "PostgreSQL connection string"},
 		{"FRONTEND_URL", C.FrontendURL, "Frontend URL for CORS"},
 		{"EVO_API_KEY / EVOLUTION_API_KEY", C.EvolutionKey, "Evolution API key"},

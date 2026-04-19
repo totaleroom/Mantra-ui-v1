@@ -3,6 +3,7 @@ package routes
 import (
 	"mantra-backend/handlers"
 	"mantra-backend/middleware"
+	"mantra-backend/models"
 	ws "mantra-backend/ws"
 	"time"
 
@@ -33,11 +34,21 @@ func Setup(app *fiber.App) {
 
 	auth := app.Group("/api/auth")
 	auth.Post("/login", authLimiter, handlers.Login)
-	auth.Post("/register", authLimiter, handlers.Register)
+	// Register now requires SUPER_ADMIN auth internally (see handlers.Register).
+	// Keep the JWT middleware so unauthenticated callers bounce off before
+	// hitting the DB.
+	auth.Post("/register", middleware.JWTProtected(), handlers.Register)
 	auth.Post("/logout", middleware.JWTProtected(), handlers.Logout)
 	auth.Get("/me", middleware.JWTProtected(), handlers.Me)
+	// Change-password must stay callable even when the user's
+	// must_change_password flag is still TRUE (it's how they clear it).
+	// So it's registered OUTSIDE the `api` group, guarded only by JWT.
+	auth.Post("/change-password", middleware.JWTProtected(), handlers.ChangePassword)
 
-	api := app.Group("/api", middleware.JWTProtected())
+	// Everything below is behind JWT AND the password-rotation gate.
+	// Users whose must_change_password flag is still set receive 428
+	// (Precondition Required) until they call /api/auth/change-password.
+	api := app.Group("/api", middleware.JWTProtected(), middleware.BlockUntilPasswordChanged())
 
 	providers := api.Group("/ai-providers")
 	providers.Get("/models", handlers.GetAllModels)
@@ -74,53 +85,87 @@ func Setup(app *fiber.App) {
 	inbox.Get("/messages", handlers.GetInboxMessages)
 	inbox.Get("/stats", handlers.GetInboxStats)
 
+	// Tenant CRUD — creating / listing / deleting whole tenants is
+	// SUPER_ADMIN only. Tenant-scoped reads/writes (/:id) are guarded
+	// by RequireTenantAccess ("id") which lets SUPER_ADMIN pass too.
+	superAdminOnly := middleware.RequireRole(string(models.UserRoleSuperAdmin))
 	clients := api.Group("/clients")
-	clients.Get("/", handlers.GetClients)
-	clients.Post("/", handlers.CreateClient)
-	clients.Get("/:id", handlers.GetClient)
-	clients.Patch("/:id", handlers.UpdateClient)
-	clients.Delete("/:id", handlers.DeleteClient)
-	clients.Get("/:id/ai-config", handlers.GetClientAIConfig)
-	clients.Put("/:id/ai-config", handlers.UpdateClientAIConfig)
+	clients.Get("/", superAdminOnly, handlers.GetClients)
+	clients.Post("/", superAdminOnly, handlers.CreateClient)
+	clients.Delete("/:id", superAdminOnly, handlers.DeleteClient)
+
+	// Per-tenant routes — isolation enforced by RequireTenantAccess.
+	tenantScoped := clients.Group("/:id", middleware.RequireTenantAccess("id"))
+	tenantScoped.Get("/", handlers.GetClient)
+	tenantScoped.Patch("/", handlers.UpdateClient)
+	tenantScoped.Get("/ai-config", handlers.GetClientAIConfig)
+	tenantScoped.Put("/ai-config", handlers.UpdateClientAIConfig)
 
 	// ─── Knowledge base (Phase 2 — RAG foundation) ─────────────────────
-	// All endpoints are tenant-scoped via :id. Upload accepts raw text;
-	// backend chunks, embeds (via OpenAI-compat provider), and persists.
-	clients.Get("/:id/knowledge/stats", handlers.GetKnowledgeStats)
-	clients.Post("/:id/knowledge/chunks", handlers.UploadKnowledgeChunks)
-	clients.Get("/:id/knowledge/chunks", handlers.ListKnowledgeChunks)
-	clients.Delete("/:id/knowledge/chunks/:chunkId", handlers.DeleteKnowledgeChunk)
-	clients.Post("/:id/knowledge/faqs", handlers.CreateFAQ)
-	clients.Get("/:id/knowledge/faqs", handlers.ListFAQs)
-	clients.Patch("/:id/knowledge/faqs/:faqId", handlers.UpdateFAQ)
-	clients.Delete("/:id/knowledge/faqs/:faqId", handlers.DeleteFAQ)
+	// All endpoints below are tenant-scoped; RequireTenantAccess ensures
+	// a STAFF of tenant A cannot read / write tenant B's knowledge.
+	tenantScoped.Get("/knowledge/stats", handlers.GetKnowledgeStats)
+	tenantScoped.Post("/knowledge/chunks", handlers.UploadKnowledgeChunks)
+	tenantScoped.Get("/knowledge/chunks", handlers.ListKnowledgeChunks)
+	tenantScoped.Delete("/knowledge/chunks/:chunkId", handlers.DeleteKnowledgeChunk)
+	tenantScoped.Post("/knowledge/faqs", handlers.CreateFAQ)
+	tenantScoped.Get("/knowledge/faqs", handlers.ListFAQs)
+	tenantScoped.Patch("/knowledge/faqs/:faqId", handlers.UpdateFAQ)
+	tenantScoped.Delete("/knowledge/faqs/:faqId", handlers.DeleteFAQ)
 
 	// ─── Tool calling (Phase 4 — AI function calling) ──────────────────
 	// Per-tenant tool definitions the AI can invoke during a conversation.
 	// Supports builtin (compiled Go handlers) and webhook (tenant URL)
 	// handler types. Execution is driven by orchestrator.runReplyLoop.
-	clients.Post("/:id/tools", handlers.CreateTool)
-	clients.Get("/:id/tools", handlers.ListTools)
-	clients.Patch("/:id/tools/:toolId", handlers.UpdateTool)
-	clients.Delete("/:id/tools/:toolId", handlers.DeleteTool)
+	tenantScoped.Post("/tools", handlers.CreateTool)
+	tenantScoped.Get("/tools", handlers.ListTools)
+	tenantScoped.Patch("/tools/:toolId", handlers.UpdateTool)
+	tenantScoped.Delete("/tools/:toolId", handlers.DeleteTool)
 
-	system := api.Group("/system")
+	system := api.Group("/system", superAdminOnly)
 	system.Get("/health", handlers.GetSystemHealth)
 	system.Post("/diagnose", handlers.RunDiagnosis)
+	// Comprehensive "blackbox" health report. Consumed by both Hermes
+	// agent (machine, JSON) and the Diagnosis Center page (human, UI).
+	// Every failing check carries a remediation hint + doc link.
+	// Returns 503 when overall==fail so Coolify / uptime monitors can
+	// alert; returns 200 when overall==warn|ok.
+	system.Get("/preflight", handlers.Preflight)
 
-	app.Use("/api/inbox/live", func(c *fiber.Ctx) error {
+	// WebSocket upgrade middleware chain:
+	//   1. Require WebSocket Upgrade header (else 426).
+	//   2. JWTProtected — populates c.Locals with role/clientID so the
+	//      ws handler can read them via conn.Locals(...).
+	//   3. BlockUntilPasswordChanged — same gate as other /api/* routes.
+	//   4. (Resource-specific ownership checks for /qr.)
+	wsUpgrade := func(c *fiber.Ctx) error {
 		if websocket.IsWebSocketUpgrade(c) {
 			return c.Next()
 		}
 		return fiber.ErrUpgradeRequired
-	})
-	app.Get("/api/inbox/live", websocket.New(ws.InboxLiveWebSocket))
+	}
 
-	app.Use("/api/whatsapp/instances/:name/qr", func(c *fiber.Ctx) error {
-		if websocket.IsWebSocketUpgrade(c) {
+	app.Get(
+		"/api/inbox/live",
+		wsUpgrade,
+		middleware.JWTProtected(),
+		middleware.BlockUntilPasswordChanged(),
+		websocket.New(ws.InboxLiveWebSocket),
+	)
+
+	app.Get(
+		"/api/whatsapp/instances/:name/qr",
+		wsUpgrade,
+		middleware.JWTProtected(),
+		middleware.BlockUntilPasswordChanged(),
+		// Tenant ownership is enforced per-:name (not per-:id), so we
+		// use the handlers.VerifyInstanceOwnership shortcut here.
+		func(c *fiber.Ctx) error {
+			if err := handlers.VerifyInstanceOwnership(c, c.Params("name")); err != nil {
+				return err
+			}
 			return c.Next()
-		}
-		return fiber.ErrUpgradeRequired
-	})
-	app.Get("/api/whatsapp/instances/:name/qr", websocket.New(ws.QRCodeWebSocket))
+		},
+		websocket.New(ws.QRCodeWebSocket),
+	)
 }

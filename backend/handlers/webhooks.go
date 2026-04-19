@@ -1,10 +1,14 @@
 package handlers
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"log"
 	"mantra-backend/config"
 	"mantra-backend/services"
+	"strconv"
 	"strings"
 	"time"
 
@@ -57,11 +61,54 @@ func EvolutionWebhook(c *fiber.Ctx) error {
 			"error": "webhook receiver not configured",
 		})
 	}
+
+	// Layer 1: shared-secret header. Constant-time to avoid timing oracle.
 	got := c.Get("X-Webhook-Secret")
 	if subtle.ConstantTimeCompare([]byte(got), []byte(config.C.WebhookSecret)) != 1 {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 			"error": "invalid webhook secret",
 		})
+	}
+
+	// Layer 2 (optional-but-recommended): HMAC signature + timestamp.
+	//
+	// Evolution API may not emit these headers out of the box, so we
+	// only enforce them when X-Webhook-Timestamp is present. Once your
+	// Evolution fork signs every delivery, you can flip this to "always
+	// required" by deleting the tsHeader guard.
+	//
+	// Replay window: ±5 minutes. Captured requests older than that are
+	// rejected even with a valid signature.
+	if tsHeader := c.Get("X-Webhook-Timestamp"); tsHeader != "" {
+		tsUnix, parseErr := strconv.ParseInt(tsHeader, 10, 64)
+		if parseErr != nil {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"error": "invalid X-Webhook-Timestamp",
+			})
+		}
+		skew := time.Since(time.Unix(tsUnix, 0))
+		if skew < -5*time.Minute || skew > 5*time.Minute {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"error": "timestamp outside replay window",
+			})
+		}
+
+		sigHeader := c.Get("X-Webhook-Signature")
+		if sigHeader == "" {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"error": "missing X-Webhook-Signature",
+			})
+		}
+		mac := hmac.New(sha256.New, []byte(config.C.WebhookSecret))
+		mac.Write([]byte(tsHeader))
+		mac.Write([]byte{'.'})
+		mac.Write(c.Body())
+		expected := hex.EncodeToString(mac.Sum(nil))
+		if subtle.ConstantTimeCompare([]byte(sigHeader), []byte(expected)) != 1 {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"error": "signature mismatch",
+			})
+		}
 	}
 
 	// 2. Parse
@@ -109,6 +156,14 @@ func EvolutionWebhook(c *fiber.Ctx) error {
 		Timestamp:      ts,
 	}
 	go func() {
+		// A panicked goroutine would crash the entire process. Wrapping
+		// here turns the failure into a log line so one bad inbound
+		// message can't take the whole backend down.
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[Webhook] PANIC in orchestrator goroutine: %v", r)
+			}
+		}()
 		if _, err := Orchestrator.HandleInbound(inbound); err != nil {
 			log.Printf("[Webhook] orchestrator error: %v", err)
 		}

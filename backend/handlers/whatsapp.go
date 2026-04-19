@@ -21,8 +21,12 @@ func GetWhatsAppInstances(c *fiber.Ctx) error {
 	if database.DB == nil {
 		return c.JSON([]interface{}{})
 	}
+	q, err := ScopedDB(c, database.DB.Model(&models.WhatsAppInstance{}), "client_id")
+	if err != nil {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "tenant scope missing", "code": "FORBIDDEN"})
+	}
 	var instances []models.WhatsAppInstance
-	if err := database.DB.Find(&instances).Error; err != nil {
+	if err := q.Find(&instances).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to fetch instances",
 			"code":  "INTERNAL_ERROR",
@@ -41,8 +45,16 @@ func GetWhatsAppInstance(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "Database not connected"})
 	}
 
+	scope, scopeErr := EffectiveTenantScope(c)
+	if scopeErr != nil {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "tenant scope missing", "code": "FORBIDDEN"})
+	}
+
 	var instance models.WhatsAppInstance
 	if err := database.DB.First(&instance, id).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Instance not found", "code": "NOT_FOUND"})
+	}
+	if scope != nil && instance.ClientID != *scope {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Instance not found", "code": "NOT_FOUND"})
 	}
 	return c.JSON(instance)
@@ -81,6 +93,16 @@ func CreateWhatsAppInstance(c *fiber.Ctx) error {
 
 	if database.DB == nil {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "Database not connected"})
+	}
+
+	// A tenant-scoped caller may only create instances under its OWN
+	// clientId. SUPER_ADMIN may target any tenant (onboarding flow).
+	scope, scopeErr := EffectiveTenantScope(c)
+	if scopeErr != nil {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "tenant scope missing", "code": "FORBIDDEN"})
+	}
+	if scope != nil && req.ClientID != *scope {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "cannot create instance under another tenant", "code": "FORBIDDEN_TENANT"})
 	}
 
 	webhookURL := ""
@@ -142,8 +164,16 @@ func DeleteWhatsAppInstance(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "Database not connected"})
 	}
 
+	scope, scopeErr := EffectiveTenantScope(c)
+	if scopeErr != nil {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "tenant scope missing", "code": "FORBIDDEN"})
+	}
+
 	var instance models.WhatsAppInstance
 	if err := database.DB.First(&instance, id).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Instance not found"})
+	}
+	if scope != nil && instance.ClientID != *scope {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Instance not found"})
 	}
 
@@ -159,6 +189,10 @@ func DisconnectInstance(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Instance name required"})
 	}
 
+	if err := VerifyInstanceOwnership(c, name); err != nil {
+		return err
+	}
+
 	evolutionService.DisconnectInstance(name)
 
 	if database.DB != nil {
@@ -171,6 +205,32 @@ func DisconnectInstance(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{"success": true})
+}
+
+// VerifyInstanceOwnership returns a ready-to-send 404 if the caller is not
+// allowed to address the named WhatsApp instance. SUPER_ADMIN passes
+// transparently. Used by routes that key off :name rather than :id (and
+// therefore can't use RequireTenantAccess). Exported so the routes
+// package can gate the QR WebSocket upgrade on ownership too.
+func VerifyInstanceOwnership(c *fiber.Ctx, name string) error {
+	if database.DB == nil {
+		return nil
+	}
+	scope, scopeErr := EffectiveTenantScope(c)
+	if scopeErr != nil {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "tenant scope missing", "code": "FORBIDDEN"})
+	}
+	if scope == nil {
+		return nil
+	}
+	var instance models.WhatsAppInstance
+	if err := database.DB.Where("instance_name = ?", name).First(&instance).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Instance not found", "code": "NOT_FOUND"})
+	}
+	if instance.ClientID != *scope {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Instance not found", "code": "NOT_FOUND"})
+	}
+	return nil
 }
 
 // SendWhatsAppMessage lets an authenticated dashboard operator send a manual
@@ -210,6 +270,20 @@ func SendWhatsAppMessage(c *fiber.Ctx) error {
 		})
 	}
 
+	// Verify the caller owns the instance referenced by :id.
+	if database.DB != nil {
+		scope, scopeErr := EffectiveTenantScope(c)
+		if scopeErr != nil {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "tenant scope missing", "code": "FORBIDDEN"})
+		}
+		if scope != nil {
+			var instance models.WhatsAppInstance
+			if err := database.DB.First(&instance, id).Error; err != nil || instance.ClientID != *scope {
+				return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Instance not found", "code": "NOT_FOUND"})
+			}
+		}
+	}
+
 	msg, err := Orchestrator.SendManual(uint(id), req.To, req.Text)
 	if err != nil {
 		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{
@@ -234,6 +308,10 @@ func GetInstanceStatus(c *fiber.Ctx) error {
 	name := c.Params("name")
 	if name == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Instance name required"})
+	}
+
+	if err := VerifyInstanceOwnership(c, name); err != nil {
+		return err
 	}
 
 	status, err := evolutionService.GetInstanceStatus(name)

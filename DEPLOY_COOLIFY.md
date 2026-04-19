@@ -185,6 +185,28 @@ openssl rand -base64 48     # untuk JWT_SECRET
 openssl rand -hex 16        # untuk POSTGRES_PASSWORD, EVO_API_KEY, HERMES_AUTH_TOKEN
 ```
 
+**⚡ Cara PALING CEPAT (recommended sejak Phase B)** — satu perintah
+meng-generate SEMUA secret sekaligus, dan mencetak isi `.env` yang
+tinggal Anda paste ke Coolify:
+
+```bash
+# Di laptop/terminal mana pun yang punya openssl + bash
+./scripts/generate-env.sh --public-url=https://mantra.yourdomain.com
+```
+
+Atau tulis langsung ke file `.env` lokal (berguna untuk test Docker
+Compose offline sebelum push ke Coolify):
+
+```bash
+./scripts/generate-env.sh --public-url=https://mantra.yourdomain.com --write
+```
+
+Script akan auto-backup `.env.backup.<timestamp>` kalau file `.env`
+lama sudah ada, dan akan generate:
+`JWT_SECRET`, `WEBHOOK_SECRET`, `POSTGRES_PASSWORD`,
+`HERMES_AUTH_TOKEN`, dan `EVO_API_KEY` (atau pakai `--evo-key=XXX`
+kalau Anda punya Evolution external yang sudah jalan).
+
 ### 4.4. Map Domain ke Container
 
 Di tab **Domains**, tambahkan mapping:
@@ -235,7 +257,12 @@ Email:    admin@mantra.ai
 Password: MantraAdmin2024!
 ```
 
-**LANGSUNG GANTI PASSWORD** setelah login pertama!
+**Sejak Phase B**, aplikasi akan **otomatis redirect ke
+`/change-password`** — Anda WAJIB ganti password dulu sebelum bisa
+akses dashboard. Ini by design: default password hanya dipakai satu
+kali, lalu dirotasi. Hal yang sama berlaku untuk akun `demo@mantra.ai`.
+
+Setelah rotasi sukses, Anda akan otomatis masuk ke dashboard utama.
 
 ---
 
