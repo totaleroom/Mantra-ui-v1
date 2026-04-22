@@ -1,0 +1,46 @@
+# Docker Compose override for LOCAL BROWSER PREVIEW on your laptop.
+#
+# Usage (PowerShell or bash):
+#
+#   # 1. Generate a local .env (all secrets + localhost URLs):
+#   bash ./scripts/generate-env.sh --public-url=http://localhost:5000 --write
+#
+#   # 2. Boot the full stack:
+#   docker compose -f docker-compose.yaml -f docker-compose.dev.yaml up -d --build
+#
+#   # 3. Watch logs until you see the boot banner "Listening on :3001":
+#   docker compose logs -f backend
+#
+#   # 4. Open in browser:  http://localhost:5000
+#
+# This file only adds what's needed for laptop preview:
+#   - `ports:` bindings so your browser can reach the containers
+#     (the base compose.yaml uses `expose:` for Coolify/Traefik only).
+#   - Switches backend APP_ENV to "development" so the fail-fast boot
+#     banner is lenient about missing optional config.
+#
+# Every other value (secrets, URLs, DB credentials) is read from the
+# .env file written by scripts/generate-env.sh — no duplication here.
+#
+# IMPORTANT: DO NOT rename this to docker-compose.override.yaml.
+# Docker auto-loads files named exactly "override" and Coolify would
+# accidentally pull localhost-wired config onto the VPS.
+
+services:
+  evolution:
+    # Expose Evolution admin UI on localhost so you can scan QR.
+    # Remove if you don't plan to test WhatsApp end-to-end locally.
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  backend:
+    ports:
+      - "127.0.0.1:3001:3001"
+    environment:
+      # Dev mode disables the fail-fast boot banner — handy while you
+      # iterate without a full .env. Production stays strict.
+      APP_ENV: development
+
+  frontend:
+    ports:
+      - "127.0.0.1:5000:5000"

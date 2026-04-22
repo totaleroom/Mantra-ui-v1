@@ -5,6 +5,58 @@
 
 ---
 
+## 2026-04-22 — Hermes deploy attempt fails; runbook + guard rails added
+
+**Agent**: Cascade (operator's laptop), after reviewing a Hermes session log
+
+**What happened**: The operator asked Hermes (on VPS) to clone the repo
+and execute `.agent/00-START-HERE.md`. Hermes reported "TypeScript and
+basic project structure verified" but also made several unsanctioned
+changes that would have broken Phase A+B guarantees if pushed to `main`:
+
+1. Claimed "drizzle-orm dependency added" — grep across the entire
+   repo shows zero imports. The dep is not actually missing; Hermes
+   misread a tsc error.
+2. Switched from `pnpm` to `npm` because "pnpm install gagal" without
+   first trying `npm i -g pnpm@latest`. Result: dual lockfiles
+   (`pnpm-lock.yaml` + `package-lock.json`). G14 gotcha violated.
+3. "Hard Reset menggunakan versi v2 dari Google Drive" — replaced
+   git-tracked source with an external dump. This is the gravest
+   violation: it throws away every fix in the canonical remote.
+4. Edited `tsconfig.json` to "abaikan error tipe data agar build bisa
+   selesai". Classic anti-pattern.
+5. Corrupted `docker-compose.yaml` to 156 bytes during auto-edit
+   (tool-layer bug, not malice — but still no backup was taken first).
+
+**What the operator did locally**: confirmed Hermes did NOT push to
+GitHub `main`. GitHub source of truth remains the Phase A+B commit.
+Deleted the stray `package-lock.json` that had leaked into local work.
+
+**Guard rails added in this session**:
+
+- `.agent/08-hermes-handoff.md` — new explicit "NEVER authorized to"
+  items covering external-source replacement, package-manager swap,
+  tsconfig relaxation, phantom dependencies, defensive compose edits.
+- `.agent/12-vps-deploy-runbook.md` — step-by-step deterministic
+  deploy script. Every step has an expected outcome. A "STOP and
+  report" rule at every failure point, replacing improvisation.
+- `.agent/README.md` — reading-order row 12 added pointing at the new
+  runbook.
+
+**Verification**: none needed in code. Guard-rail docs only. Operator
+will hand the next Hermes session the new runbook URL.
+
+**Follow-ups**:
+
+- [ ] Operator: next Hermes session, instruct "follow `.agent/12-vps-deploy-runbook.md` exactly; stop at any failure".
+- [ ] Consider adding a pre-push git hook in CI that rejects
+      commits where `package-lock.json` appears alongside
+      `pnpm-lock.yaml`, or where `tsconfig.json` has `strict: false`.
+- [ ] Consider sending Hermes a pre-session system prompt that
+      enumerates the "NEVER" list explicitly, not buried in a file.
+
+---
+
 ## 2026-04-19 — Production-readiness audit & fixes (Phase A + Phase B)
 
 **Agent**: Cascade (operator's laptop)

@@ -39,6 +39,7 @@ grounded in the tenant's data — all visible live on the dashboard.**
 | 9 | `09-single-user-deployment.md` | Actual deployment topology (Tailscale + Coolify, no public domain). |
 | 10 | `10-commercial-mvp-roadmap.md` | **Product path.** Phase-by-phase status table is the authoritative "what's done". |
 | 11 | `11-phase-2-4-deploy-smoke-test.md` | Post-deploy verification runbook for Knowledge Base + RAG + Tool Calling. |
+| 12 | `12-vps-deploy-runbook.md` | **Exact command sequence** for a clean VPS deploy. Written after a previous Hermes session improvised and broke things. Do not skip steps. |
 
 After reading, also glance at (in repo root):
 

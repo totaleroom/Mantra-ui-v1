@@ -39,6 +39,25 @@
 - Lower bcrypt cost below 12 or JWT length below 16 chars.
 - Disable the origin check on Server Actions in production.
 - Self-upgrade your own system packages / tooling on the VPS.
+- **Replace the repo contents with code from any other source** — no
+  `tar -xf` from `~/Downloads`, no `rsync` from a Google Drive dump,
+  no `git checkout` of a branch not in the canonical GitHub remote.
+  Source of truth is `origin/main` of the GitHub repo. Full stop.
+- **Switch the package manager to `npm`** when `pnpm-lock.yaml` is
+  present. If `pnpm: command not found`, install it first:
+  `npm install -g pnpm@latest`. Never generate a second lockfile.
+- **Relax `tsconfig.json`** (set `strict: false`, add
+  `skipLibCheck: true`, add `ignoreDeprecations`, or toggle
+  `noImplicit*` off) to make a build pass. Fix the underlying type
+  error instead, or STOP and ask the operator. A green build with
+  suppressed types is worse than a red build you can reason about.
+- **Add dependencies the code doesn't import.** Before running
+  `pnpm add X`, grep the codebase for `import ... from "X"`. If no
+  hit, the dep is not missing — you misread an error. Ask.
+- **Edit `docker-compose.yaml` defensively** without first running
+  `cp docker-compose.yaml docker-compose.yaml.bak`. Large
+  auto-edits are known to truncate the file. If you corrupt it,
+  restore from the backup or from `git checkout docker-compose.yaml`.
 
 ---
 
