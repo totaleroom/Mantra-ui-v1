@@ -53,6 +53,11 @@ git fetch origin
 git checkout main
 git pull --ff-only origin main
 git log -1 --oneline                # note the commit you're deploying
+
+# Shell scripts lose their +x bit when committed from a Windows workstation.
+# Set them executable unconditionally — idempotent, safe to re-run.
+chmod +x scripts/*.sh
+ls -l scripts/*.sh                  # verify each shows "x" in the owner bits
 ```
 
 If `git pull` reports non-fast-forward, there are local commits you
@@ -67,6 +72,8 @@ shouldn't have. STOP and report the log.
 # from --public-url. Auto-backs up any existing .env.
 ./scripts/generate-env.sh --public-url=https://mantra.<operator-domain> --write
 ```
+
+If you hit `Permission denied`, Step 1's `chmod +x` was skipped. Go back.
 
 If `scripts/generate-env.sh` is missing, the repo is older than Phase B
 or you are not at the right commit. Re-check `git log -1`.

@@ -293,3 +293,26 @@ from the seeds block (comments above it show the bcrypt hashes).
 
 **Never** do this on a production DB that already has real tenants
 without backing up first (`scripts/backup-postgres.sh`).
+
+---
+
+## G19 — Shell scripts arrive on Linux without +x bit
+
+**Symptom**: On VPS, `./scripts/generate-env.sh --write` returns
+`Permission denied` even though the file exists and `cat` works.
+
+**Cause**: The repo is edited on a Windows workstation that doesn't
+have `core.filemode = true` properly propagated. Git tracks the
+file but the executable bit is missing on clone. This is a known
+limitation of cross-OS git repos, not a bug.
+
+**Fix**: First step of every fresh VPS deploy is:
+```bash
+chmod +x scripts/*.sh
+```
+This is now baked into `.agent/12-vps-deploy-runbook.md` Step 1.
+
+**Alternative (more permanent)**: on a Linux workstation, run
+`git update-index --chmod=+x scripts/*.sh && git commit -m "fix: script +x bit"`.
+Once that commit is in `origin/main`, future clones inherit it. Until
+that happens, keep the `chmod +x` in Step 1.

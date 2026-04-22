@@ -43,6 +43,18 @@ if ([string]::IsNullOrWhiteSpace($EvoKey)) {
     $EvoGenerated = $true
 }
 
+# Parse PublicUrl so we can build service-specific URLs with the right
+# port. Previously `${PublicUrl}:8080` produced malformed
+# "host:5000:8080" when the input already had :5000 for sslip.io mode.
+$UrlMatch = [regex]::Match($PublicUrl, '^(https?)://([^:/]+)(?::(\d+))?')
+if (-not $UrlMatch.Success) {
+    throw "PublicUrl must be like http://host or http://host:port. Got: $PublicUrl"
+}
+$Scheme = $UrlMatch.Groups[1].Value
+$Host_  = $UrlMatch.Groups[2].Value
+$EvoUrlPublic     = "${Scheme}://${Host_}:8080"
+$BackendUrlPublic = "${Scheme}://${Host_}:3001"
+
 $WsUrl = $PublicUrl -replace '^http', 'ws'
 
 $Content = @"
@@ -63,12 +75,12 @@ REDIS_URL=redis://redis:6379
 # --- Evolution (WhatsApp gateway) ---
 EVO_API_KEY=$EvoKey
 EVO_API_URL=http://evolution:8080
-EVOLUTION_SERVER_URL=$PublicUrl`:8080
-NEXT_PUBLIC_EVO_URL=$PublicUrl`:8080
+EVOLUTION_SERVER_URL=$EvoUrlPublic
+NEXT_PUBLIC_EVO_URL=$EvoUrlPublic
 NEXT_PUBLIC_EVO_INSTANCE_NAME=mantra_instance
 
 # --- Public URLs ---
-PUBLIC_BACKEND_URL=$PublicUrl
+PUBLIC_BACKEND_URL=$BackendUrlPublic
 BACKEND_INTERNAL_URL=http://backend:3001
 FRONTEND_URL=$PublicUrl
 NEXT_PUBLIC_API_URL=$PublicUrl

@@ -84,7 +84,11 @@ services:
   # Evolution API — 1 GB
   # -----------------------------------------------------------
   evolution:
-    image: atendai/evolution-api:latest
+    # Upstream canonical namespace. `atendai/evolution-api` is the older
+    # fork, last updated April 2025; `evoapicloud/evolution-api` is where
+    # the maintainer ships new versions (currently v2.3.7). Pin to a
+    # specific tag (not :latest) so an upstream push can't break our deploy.
+    image: evoapicloud/evolution-api:v2.3.7
     container_name: mantra_evolution
     restart: unless-stopped
     # Evolution reaches the backend via Docker network (service name).
