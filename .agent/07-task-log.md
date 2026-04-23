@@ -5,6 +5,78 @@
 
 ---
 
+## 2026-04-23 (afternoon) — Fix backend crash-loop + Evolution v2.3 env schema
+
+**Agent**: Cascade (operator's laptop), responding to a Hermes report
+
+**Symptom**: After the morning's Phase C fixes finally got the build
+to complete, the VPS stack reported:
+
+- `mantra_evolution` in `Restarting` loop with `Error: Database provider invalid.`
+- `mantra_backend` in `Restarting` loop with
+  `ERROR: constraint "uni_users_email" of relation "users" does not exist (SQLSTATE 42704)`
+- `mantra_frontend` stuck in `Created` because its `depends_on: backend service_healthy` gate never fired.
+- Postgres + Redis healthy; fundamentals OK.
+
+**Root causes** (two independent bugs):
+
+1. **Evolution API v2.3.7 schema change**: our `docker-compose.yaml`
+   used the v2.1 env shape (`DATABASE_ENABLED`, `DATABASE_CONNECTION_URI`).
+   v2.2+ requires `DATABASE_PROVIDER=postgresql|mysql` to be set
+   explicitly; without it the bootstrap prints "Database provider
+   invalid" and exits. This was a natural consequence of the morning's
+   upgrade from `atendai/:latest` to `evoapicloud/:v2.3.7`.
+
+2. **GORM AutoMigrate vs init.sql collision**: `init.sql` creates
+   `users.email TEXT NOT NULL UNIQUE`, which Postgres names
+   `users_email_key` (default). `backend/models/models.go` had an
+   `AutoMigrate(&User{}, ...)` helper that `ConnectPostgres` called at
+   startup; GORM expects its own naming (`uni_users_email`) and issues
+   a DROP CONSTRAINT to reconcile — but the named constraint doesn't
+   exist, the transaction rolls back, and `log.Fatalf` kills the
+   container. Repeats forever under `restart: unless-stopped`.
+
+**Changes committed**:
+
+- `docker-compose.yaml` — added `DATABASE_PROVIDER: "postgresql"` to
+  the `evolution` service, with an inline comment pointing at the
+  v2.1 → v2.3 schema change.
+- `backend/database/postgres.go` — removed the `models.AutoMigrate(db)`
+  call from `ConnectPostgres`. init.sql is now the only schema
+  authority. Added ~15 lines of doc-comment above the function
+  explaining *why* AutoMigrate is disabled so the next agent doesn't
+  re-enable it.
+- `backend/models/models.go` — deleted the `AutoMigrate(db *gorm.DB)`
+  helper entirely (dead code), removed the now-unused `gorm.io/gorm`
+  import. Kept the models so handlers still get their struct types.
+- `.agent/05-gotchas.md` — new G22 documents the failure mode,
+  root cause, and the ADD-COLUMN workflow (edit init.sql + reapply).
+
+**Verification (local)**:
+
+- `grep AutoMigrate backend/**/*.go` → returns nothing.
+- `grep "DATABASE_PROVIDER" docker-compose.yaml` → present.
+- Dockerfile still pins pnpm@10 and caps NODE_OPTIONS (from morning
+  session — unchanged).
+- Go source reviewed: import list is tidy, models file compiles
+  standalone (only imports `time`).
+
+**Follow-ups for next agent / next Hermes run**:
+
+- `docker compose down` (NOT `-v`) to stop the crash-looping stack,
+  then `git pull && ./scripts/vps-build.sh` to pick up both fixes.
+- The existing postgres volume may already have a partially-migrated
+  `users` table from the failed AutoMigrate attempts. init.sql uses
+  `CREATE TABLE IF NOT EXISTS` so it won't re-run, but if the table
+  shape is wrong, operator may need to drop the volume:
+  `docker compose down && docker volume rm mantra_postgres_data`,
+  then rerun. This is the ONLY scenario where `-v` is acceptable, and
+  only for the smoke-test stage.
+- A future migration tool (goose / golang-migrate) should replace the
+  "ALTER TABLE IF NOT EXISTS in init.sql" pattern. File a ticket.
+
+---
+
 ## 2026-04-23 — Deploy QoL: build helper, .dockerignore, Node heap cap, lockfile sync
 
 **Agent**: Cascade (operator's laptop), prepping a clean re-clone for Hermes

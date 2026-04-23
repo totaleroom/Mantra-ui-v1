@@ -104,6 +104,11 @@ services:
       # which the frontend already points at.
       SERVER_URL:                    ${EVOLUTION_SERVER_URL:-${NEXT_PUBLIC_EVO_URL:-http://localhost:8080}}
       AUTHENTICATION_API_KEY:        ${EVO_API_KEY:?EVO_API_KEY is required}
+      # Evolution v2.2+ requires DATABASE_PROVIDER explicit. v2.1 accepted
+      # DATABASE_CONNECTION_URI alone; v2.3.7 errors out with
+      # "Database provider invalid" if this is missing. Valid values:
+      # 'postgresql' | 'mysql'. We use pgvector/pg15 so postgresql.
+      DATABASE_PROVIDER:             "postgresql"
       DATABASE_ENABLED:              "true"
       DATABASE_CONNECTION_URI:       postgresql://${POSTGRES_USER:-mantra}:${POSTGRES_PASSWORD}@postgres:5432/evolution_db?schema=public
       DATABASE_CONNECTION_CLIENT_NAME: evolution_db

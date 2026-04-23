@@ -387,3 +387,47 @@ runtime we *throw* if they're missing.
 **Never "solve" a build-time env-var error by weakening the schema or
 passing the secret as a build ARG.** Server secrets belong in
 `env_file:` at runtime, not in any layer of the Docker image.
+
+---
+
+## G22 — GORM AutoMigrate collides with init.sql's default constraint names
+
+**Symptom**: Backend container crash-loops on first boot with:
+
+```
+ERROR: constraint "uni_users_email" of relation "users" does not exist (SQLSTATE 42704)
+[DB] Auto-migration failed: ERROR: constraint "uni_users_email"...
+```
+
+**Cause**: `backend/database/init.sql` is Postgres's canonical schema
+source. It creates `users.email TEXT NOT NULL UNIQUE`, which Postgres
+names `users_email_key` (its default). `backend/models/models.go`
+formerly ran `gorm.AutoMigrate(&User{}, ...)` at startup; GORM expects
+unique indexes to be named `uni_users_email` (its own convention) and
+issues `ALTER TABLE users DROP CONSTRAINT uni_users_email` as part of
+its reconciliation. The DROP fails because that named constraint was
+never created — the Postgres-default one was — and because GORM's
+migrator wraps everything in one transaction, the entire AutoMigrate
+rolls back, then `log.Fatalf` crashes the container. Restart policy
+`unless-stopped` retries the same failure forever.
+
+**Fix** (done 2026-04-23): `ConnectPostgres()` no longer calls
+AutoMigrate. The `models.AutoMigrate` helper was deleted. Schema is
+authoritative in `init.sql`, which Postgres runs once when the data
+volume is first created. Go code reads and writes tables but never
+tries to create or alter them.
+
+**Workflow for adding a column or table**:
+
+1. Add DDL to `init.sql` with `CREATE TABLE IF NOT EXISTS` or
+   `ALTER TABLE ... ADD COLUMN IF NOT EXISTS ...`.
+2. Add the matching Go field/struct in `models/models.go`.
+3. For a fresh deploy the init.sql runs automatically. For an existing
+   database, the operator runs the ALTER statements manually:
+   ```bash
+   docker compose exec -T postgres psql -U mantra -d mantra_db < backend/database/init.sql
+   ```
+   (IF NOT EXISTS makes this idempotent.)
+
+**Never re-enable AutoMigrate** as a shortcut. Having two schema
+sources of truth is the root cause; picking one (init.sql) is the fix.

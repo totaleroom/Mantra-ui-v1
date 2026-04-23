@@ -1,10 +1,6 @@
 package models
 
-import (
-	"time"
-
-	"gorm.io/gorm"
-)
+import "time"
 
 type UserRole string
 
@@ -145,20 +141,8 @@ type ServiceHealth struct {
 	LastCheck   time.Time     `json:"lastCheck"`
 }
 
-func AutoMigrate(db *gorm.DB) error {
-	return db.AutoMigrate(
-		&User{},
-		&Client{},
-		&AIProvider{},
-		&ClientAIConfig{},
-		&WhatsAppInstance{},
-		&CustomerMemory{},
-		&SystemDiagnosis{},
-		&InboxMessage{},
-		// Knowledge base (Phase 2 — RAG foundation)
-		&KnowledgeChunk{},
-		&FAQ{},
-		// Tool calling (Phase 4 — AI function calling)
-		&ClientTool{},
-	)
-}
+// NOTE: We intentionally do NOT expose an AutoMigrate helper.
+// Schema is managed exclusively by backend/database/init.sql because
+// GORM's AutoMigrate conflicts with Postgres's default constraint names
+// (e.g. users_email_key vs GORM's uni_users_email). See
+// database/postgres.go and .agent/05-gotchas.md G22.

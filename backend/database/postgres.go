@@ -3,7 +3,6 @@ package database
 import (
 	"log"
 	"mantra-backend/config"
-	"mantra-backend/models"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -12,6 +11,24 @@ import (
 
 var DB *gorm.DB
 
+// ConnectPostgres opens the shared *gorm.DB pool. Schema management is
+// handled by backend/database/init.sql, which Postgres runs exactly once
+// when the data volume is first created. We intentionally do NOT call
+// gorm.AutoMigrate here because:
+//
+//   - init.sql creates unique constraints with Postgres's default naming
+//     (e.g. users_email_key). GORM's AutoMigrate expects its own convention
+//     (uni_users_email) and tries to DROP CONSTRAINT that doesn't exist,
+//     crashing the backend on every boot (error: "constraint does not
+//     exist (SQLSTATE 42704)"). See .agent/05-gotchas.md G22.
+//   - Having two sources of schema truth (init.sql + AutoMigrate) means
+//     every schema change requires keeping both in sync. init.sql alone is
+//     simpler to reason about and reproducible across environments.
+//
+// If init.sql falls behind the Go models (e.g. a new table), add the
+// DDL to init.sql with `CREATE TABLE IF NOT EXISTS ...` and re-apply it
+// to existing databases manually. Do NOT re-enable AutoMigrate as a
+// shortcut.
 func ConnectPostgres() {
 	dsn := config.C.DatabaseURL
 	if dsn == "" {
@@ -38,10 +55,6 @@ func ConnectPostgres() {
 	sqlDB.SetMaxOpenConns(25)
 	sqlDB.SetMaxIdleConns(5)
 
-	if err := models.AutoMigrate(db); err != nil {
-		log.Fatalf("[DB] Auto-migration failed: %v", err)
-	}
-
 	DB = db
-	log.Println("[DB] PostgreSQL connected and migrated successfully")
+	log.Println("[DB] PostgreSQL connected (schema managed by init.sql)")
 }
