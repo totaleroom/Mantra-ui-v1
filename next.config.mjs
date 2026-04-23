@@ -5,6 +5,18 @@
 // unsafe-eval is required by Next.js dev HMR; we only allow it outside production.
 const isProd = process.env.NODE_ENV === 'production'
 
+// Is the public site served over HTTPS? If not (plain HTTP on a port like
+// the current Coolify deploy on http://43.157.223.29:5000), we MUST NOT
+// emit `upgrade-insecure-requests` in CSP or `Strict-Transport-Security`
+// in headers: both would force the browser to rewrite subresource URLs to
+// https://, hit a port with no TLS server, and fail every CSS/JS request
+// with ERR_SSL_PROTOCOL_ERROR. The page then renders completely unstyled.
+// See G27 in .agent/05-gotchas.md.
+//
+// When TLS is added later, set NEXT_PUBLIC_BASE_URL=https://your-host and
+// both directives re-enable automatically.
+const deploymentIsHttps = (process.env.NEXT_PUBLIC_BASE_URL || '').startsWith('https://')
+
 const apiOrigin = process.env.NEXT_PUBLIC_API_URL || ''
 const wsOrigin = process.env.NEXT_PUBLIC_WS_URL || ''
 const evoOrigin = process.env.NEXT_PUBLIC_EVO_URL || ''
@@ -36,8 +48,14 @@ const csp = [
   `style-src 'self' 'unsafe-inline'`,
   `script-src 'self'${isProd ? '' : " 'unsafe-eval' 'unsafe-inline'"}`,
   `connect-src ${connectSrc}`,
-  `upgrade-insecure-requests`,
-].join('; ')
+  // Only upgrade when the deployment itself is HTTPS. Otherwise the
+  // browser rewrites all same-origin subresource requests from http://
+  // to https:// on this page, and our plain-HTTP port has no TLS → every
+  // CSS/JS asset fails with ERR_SSL_PROTOCOL_ERROR.
+  deploymentIsHttps ? `upgrade-insecure-requests` : '',
+]
+  .filter(Boolean)
+  .join('; ')
 
 const nextConfig = {
   // Standalone output — required for Docker/Coolify deployment
@@ -112,10 +130,18 @@ const nextConfig = {
         source: '/:path*',
         headers: [
           { key: 'X-DNS-Prefetch-Control', value: 'on' },
-          {
-            key: 'Strict-Transport-Security',
-            value: 'max-age=63072000; includeSubDomains; preload',
-          },
+          // HSTS only makes sense when we ARE serving over HTTPS. Emitting
+          // it over plain HTTP is RFC 6797 §8.1 violation (browsers ignore
+          // it) and pre-loading the preload directive bakes a long-term
+          // "always HTTPS" commitment we can't fulfill on port 5000 yet.
+          ...(deploymentIsHttps
+            ? [
+                {
+                  key: 'Strict-Transport-Security',
+                  value: 'max-age=63072000; includeSubDomains; preload',
+                },
+              ]
+            : []),
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },

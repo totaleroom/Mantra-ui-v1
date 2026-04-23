@@ -5,6 +5,81 @@
 
 ---
 
+## 2026-04-23 (night) — G27: fix unstyled login page on HTTP deployment
+
+**Agent**: Cascade (operator's laptop), after Hermes ran a
+thorough 5-step diagnostic of the unstyled-login symptom.
+
+**What**: `next.config.mjs` unconditionally emitted
+`upgrade-insecure-requests` in its Content-Security-Policy. On the
+current plain-HTTP deployment (`http://43.157.223.29:5000`), this
+directive made the browser silently rewrite every same-origin CSS
+and JS subresource request from `http://` to `https://`, which
+fails with `ERR_SSL_PROTOCOL_ERROR` because port 5000 has no TLS
+server. The login page loaded, but every stylesheet it referenced
+vanished in flight, yielding the "giant unstyled SVG" visual.
+
+Hermes's diagnostic data was solid — CSS bundles present in
+container, `curl` fetches returned HTTP 200, HTML referenced the
+correct URLs. His final hypothesis blamed HSTS, which is
+plausible-sounding but incorrect: HSTS on IP addresses is
+ignored by browsers per RFC 6797 §2.3, and HSTS delivered over
+non-secure transport is ignored per §8.1. The CSP
+`upgrade-insecure-requests` directive has neither of those
+carve-outs and IS the culprit.
+
+**Changes**:
+
+- `next.config.mjs` — introduced `deploymentIsHttps` flag
+  computed from `NEXT_PUBLIC_BASE_URL`. Gated both
+  `upgrade-insecure-requests` (in CSP) and
+  `Strict-Transport-Security` (in response headers) on that flag.
+  Forward-compatible: when operator adds TLS and sets
+  `NEXT_PUBLIC_BASE_URL=https://...`, both directives re-enable
+  automatically with no further code change.
+- `.agent/05-gotchas.md` — added G27 with full causality
+  explanation, the "NOT the cause" section addressing the HSTS
+  misdiagnosis, and a prevention note for future agents.
+
+**Verification**:
+
+- Static review of the diff: `filter(Boolean)` on the CSP array
+  and `...(cond ? [...] : [])` spread on headers are both correct
+  patterns; both reduce to zero additions when `deploymentIsHttps`
+  is false.
+- Logic reviewed against actual prod env: `NEXT_PUBLIC_BASE_URL`
+  default is `http://localhost:5000` (Dockerfile ARG, line 37) and
+  Coolify-side would set the real prod URL. In both cases today
+  the value starts with `http://` → `deploymentIsHttps=false` →
+  both directives stripped → CSS loads.
+- No change to any runtime behavior beyond CSP/response headers.
+
+**Follow-ups for this commit's push**:
+
+Same as the auth-model decision: operator pushes from Windows,
+Hermes pulls + rebuilds:
+
+```
+docker compose build frontend 2>&1 | tee /tmp/mantra-frontend-build.log
+docker compose up -d frontend
+sleep 30
+docker compose ps frontend
+```
+
+Then hard-refresh `http://43.157.223.29:5000/login` in the
+browser (Ctrl+Shift+R to bypass cache). CSS should now render.
+
+**Follow-up for later**:
+
+- When operator adds TLS (Caddy in front of port 5000, or Coolify
+  domain + cert), set `NEXT_PUBLIC_BASE_URL=https://<host>` in the
+  Coolify env, rebuild once. HSTS + upgrade-insecure-requests will
+  come back automatically.
+- Consider also gating `X-Frame-Options: SAMEORIGIN` on HTTPS only
+  if we ever need to iframe across protocols (currently fine).
+
+---
+
 ## 2026-04-23 (night) — Auth model decision: operator-push-forever
 
 **Agent**: Cascade (operator's laptop), after Hermes reported he

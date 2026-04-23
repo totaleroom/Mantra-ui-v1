@@ -606,3 +606,98 @@ stuck between options A, B, C with no clean path.
 - If a future pre-flight check needs to enforce "no stray test
   artifacts", add an explicit grep against known-bad patterns
   (e.g. `*.tmp`, `*.log`) rather than a blanket untracked check.
+
+---
+
+## G27 — Login page renders completely unstyled on HTTP deployments
+
+**Symptom**: After a clean frontend build on the VPS
+(`http://43.157.223.29:5000/login`), the page renders with zero
+CSS — giant unstyled SVG logo fills the viewport, form inputs use
+browser default styles, no background, no layout. Meanwhile:
+
+- `docker exec mantra_frontend ls /app/.next/static/chunks/` shows
+  the CSS bundles present and populated (155 KB Tailwind output).
+- `curl http://localhost:5000/_next/static/chunks/<hash>.css`
+  returns HTTP 200 with real CSS content.
+- `curl http://localhost:5000/login` returns HTML that references
+  the correct CSS URLs.
+
+Everything works from the VPS shell. Only the browser fails.
+
+**Cause**: `next.config.mjs` unconditionally includes
+`upgrade-insecure-requests` in its Content-Security-Policy. This
+CSP directive tells the browser: "for every subresource request
+on this document, rewrite `http://` to `https://` before fetching".
+
+When the deployment actually runs on plain HTTP (port 5000, no
+TLS, no reverse proxy terminating TLS), the browser:
+
+1. Loads `http://43.157.223.29:5000/login` — HTML arrives, CSP
+   header says upgrade insecure requests.
+2. Parses `<link rel="stylesheet" href="/_next/static/chunks/xyz.css">`.
+3. Resolves relative URL → `http://43.157.223.29:5000/_next/static/...`.
+4. CSP kicks in → rewrites to `https://43.157.223.29:5000/_next/static/...`.
+5. Port 5000 speaks HTTP only → TLS handshake fails →
+   `ERR_SSL_PROTOCOL_ERROR`.
+6. Browser silently drops the stylesheet request. Page renders
+   unstyled. No red error in the console unless devtools are open.
+
+curl bypasses CSP, which is why all VPS-shell diagnostics show
+the CSS is fine. The problem exists only inside browsers.
+
+**NOT the cause** (common misdiagnosis): The
+`Strict-Transport-Security` header is ALSO present in the config,
+and looks suspiciously relevant. But HSTS is per RFC 6797 §2.3
+not applied to hosts identified by IP addresses, and per §8.1
+MUST be ignored by browsers when received over non-secure
+transport. So HSTS on `http://43.157.223.29/` is a no-op.
+The `upgrade-insecure-requests` CSP directive has neither of
+those carve-outs — it applies to the document's own origin
+regardless of IP vs. hostname or HTTP vs. HTTPS.
+
+**Fix**: Gate both `upgrade-insecure-requests` and
+`Strict-Transport-Security` on whether the deployment is actually
+HTTPS. `next.config.mjs`:
+
+```js
+const deploymentIsHttps =
+  (process.env.NEXT_PUBLIC_BASE_URL || '').startsWith('https://')
+
+const csp = [
+  // ...other directives...
+  deploymentIsHttps ? `upgrade-insecure-requests` : '',
+].filter(Boolean).join('; ')
+
+// in headers():
+headers: [
+  { key: 'X-DNS-Prefetch-Control', value: 'on' },
+  ...(deploymentIsHttps
+    ? [{
+        key: 'Strict-Transport-Security',
+        value: 'max-age=63072000; includeSubDomains; preload',
+      }]
+    : []),
+  // ...other headers...
+],
+```
+
+When operator later adds TLS (Caddy/Traefik terminating HTTPS in
+front of port 5000), they set `NEXT_PUBLIC_BASE_URL=https://...`
+and both directives re-enable automatically. No code change
+required at that time.
+
+**Prevention**:
+
+- Any security header that mandates HTTPS (`Strict-Transport-
+  Security`, `upgrade-insecure-requests`, COEP credentialless)
+  must be gated on a runtime-resolved "are we actually HTTPS?"
+  check, not emitted unconditionally.
+- When a stylesheet appears to vanish in the browser but curl
+  says it's fine, suspect CSP `upgrade-insecure-requests` before
+  HSTS. HSTS on IPs is almost always a red herring.
+- Devtools Network tab will show failed CSS requests to
+  `https://` with a pseudo-mixed-content error — useful
+  confirmation but not always reached by agents diagnosing
+  from the shell.
+
