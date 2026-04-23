@@ -463,18 +463,46 @@ docker exec mantra_frontend printenv JWT_SECRET | cut -c1-20   # runtime
 | Evolution manager | `http://43-157-223-29.sslip.io:8080/` | Do not expose long-term |
 | Localhost equiv. | `http://localhost:5000`, `:3001`, `:8080` | Safer for curl from the VPS shell |
 
-### Paths you should know verbatim
+### Paths and identities you should know verbatim
 
 - `REPO_ROOT=/root/project/web-apps/Mantra-ui-v1`
 - `COMPOSE_FILE=$REPO_ROOT/docker-compose.yaml`
 - `ENV_FILE=$REPO_ROOT/.env`
 - `BUILD_LOG=/tmp/mantra-build.log`
 - Hermes own notes: `/root/.hermes/` (yours to manage)
+- Canonical remote: `https://github.com/totaleroom/Mantra-ui-v1.git`
+  (HTTPS, operator-owned). Every `git remote -v` check must show
+  this exact URL for both fetch and push.
+
+### Push authority
+
+**You cannot push to GitHub.** The VPS has no deploy key, no PAT,
+no `gh` auth configured, and operator has chosen to keep it that
+way ("operator push forever" model). Consequences for how you work:
+
+- `git fetch origin` and `git pull --ff-only origin main` both
+  work — they need no credentials over HTTPS for a public repo.
+- `git push` will fail with an auth prompt you cannot answer.
+  Do not try. Report the diff back to the operator via chat.
+- `git commit` locally is fine for bookkeeping. It just doesn't
+  propagate. If you commit, do so with the Hermes identity:
+  `git config user.name "Hermes (AI Agent)"` and
+  `git config user.email "hermes@mantra.local"`.
+- For anything Cascade-style (persona updates, runbook sync,
+  task-log entries): write to `/tmp/<slug>.md` or use
+  `git format-patch` and paste the text into chat. Operator
+  handles the commit + push from Windows. You then `git pull`.
+- Coolify's auto-deploy is triggered by `git push origin main`
+  from the operator's Windows machine, NOT by any action you
+  take on the VPS. You are downstream of that push.
+
+If this model changes (operator sets up a deploy key later),
+this section is the first thing that will be updated.
 
 If any of these ever disagree with what you find on the disk, the
-next commit from Cascade will re-sync this section. Open a PR; do
-not just hard-code the new path in whatever runbook step you are
-executing.
+next commit from Cascade will re-sync this section. Open a PR-
+equivalent paste to the operator; do not just hard-code the new
+path in whatever runbook step you are executing.
 
 ---
 

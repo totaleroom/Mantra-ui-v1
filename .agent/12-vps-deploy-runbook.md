@@ -30,21 +30,29 @@ node --version                    # ≥ 20
 pnpm --version                    # ≥ 9 — install with: npm i -g pnpm@latest
 
 # 3. Confirm you are on the canonical remote.
-git remote -v                     # must show the operator's github.com repo
-git status                        # must be clean or report EXACTLY what changed
+git remote -v                     # must show exactly:
+                                  #   origin  https://github.com/totaleroom/Mantra-ui-v1.git (fetch)
+                                  #   origin  https://github.com/totaleroom/Mantra-ui-v1.git (push)
+                                  # if different, STOP — someone changed the canonical URL.
+git status                        # must be clean (tracked files) — untracked
+                                  # operator-owned files (.env2, .windsurf/) are fine
 ```
 
-If `git status` shows any modified / untracked files from a previous
-session, run:
+If `git status` shows **modified tracked** files from a previous
+session, that is real dirt and needs action:
 
 ```bash
-git stash push -u -m "hermes-previous-session"
-# or, if you are ABSOLUTELY sure those changes are garbage:
-git reset --hard origin/main && git clean -fd
+# Default — safe, keeps diff recoverable for 30 days
+git stash push -m "hermes-previous-session" -- <modified-tracked-files>
+
+# Only if operator has explicitly approved a clean slate:
+git checkout HEAD -- <modified-tracked-files>
 ```
 
-The second form is only okay when the operator has approved a full
-reset. Otherwise stash and report.
+**Do NOT** `git stash -u` (which sweeps up untracked files too) or
+`git clean -fd` — both would delete the operator's untracked
+working files (`.env2`, `.windsurf/`, local notes) which are not
+your domain. See G26 in `05-gotchas.md`.
 
 ---
 
@@ -56,8 +64,10 @@ git checkout main
 git pull --ff-only origin main
 git log -1 --oneline                # note the commit you're deploying
 
-# Shell scripts lose their +x bit when committed from a Windows workstation.
-# Set them executable unconditionally — idempotent, safe to re-run.
+# Shell scripts now carry their +x bit in the git index (committed
+# via `git update-index --chmod=+x scripts/*.sh` — see G26). A fresh
+# `git pull` on Linux gives you mode 0755 automatically. This chmod
+# is defensive only, in case someone re-committed without the +x bit.
 chmod +x scripts/*.sh
 ls -l scripts/*.sh                  # verify each shows "x" in the owner bits
 ```

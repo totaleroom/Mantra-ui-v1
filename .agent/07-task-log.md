@@ -5,6 +5,82 @@
 
 ---
 
+## 2026-04-23 (night) — Auth model decision: operator-push-forever
+
+**Agent**: Cascade (operator's laptop), after Hermes reported he
+had no GitHub credentials on the VPS (no deploy key, no PAT, no
+`gh` auth, no SSH key for GitHub).
+
+**What**: Codified the long-term git push model for this project.
+Operator chose option 4 of 4 presented: **operator pushes forever,
+Hermes never pushes**. Rationale not re-argued here (see chat
+log); the options considered were:
+
+1. SSH deploy key on VPS (scope: this repo, read/write).
+2. Setup deploy key NOW before resuming deploy.
+3. Fine-grained PAT in `~/.netrc` on VPS.
+4. Operator-push-forever (chosen) — friction per task-log entry,
+   but zero secret material on the VPS.
+
+**Changes**:
+
+- `.agent/08-hermes-handoff.md` — added "Canonical remote" and
+  "Push authority" rows to the VPS layout facts table. Rewrote
+  the "Standard workflow" section into Hermes-does / operator-does
+  columns so the boundary is explicit. Updated the deployment
+  pathway diagram: Hermes edits → paste to chat → operator pushes
+  → Coolify redeploys → Hermes smoke-tests.
+- `.agent/13-operating-persona.md` §8 — renamed "Paths you should
+  know" to "Paths and identities" and added the canonical remote
+  URL `https://github.com/totaleroom/Mantra-ui-v1.git`. Added a
+  dedicated "Push authority" subsection explaining the model and
+  its consequences for how Hermes sequences work.
+- `.agent/12-vps-deploy-runbook.md` Step 0 — named the canonical
+  remote URL verbatim so `git remote -v` has an exact match
+  target. Rewrote the "if working tree is dirty" block to respect
+  G26 (do NOT `git stash -u` or `git clean -fd`, both would
+  delete untracked operator files).
+
+**Verification**:
+
+- Pure-docs change; no runtime code touched.
+- Cross-checked that every remaining mention of "Hermes push" or
+  "Hermes pushes" in `.agent/` either refers to the legacy model
+  (in history / previous log entries — left intact as record) or
+  has been updated to the new model.
+  ```
+  grep -rn 'Hermes push' .agent | grep -v 07-task-log.md
+  ```
+
+**Implication for every future entry below this one**:
+
+Every time Hermes makes a change that needs to reach GitHub:
+
+1. Hermes edits files on disk in `/root/project/web-apps/Mantra-ui-v1`.
+2. Hermes runs local verification (pre-flight, docker build, smoke).
+3. Hermes exports the diff via `git diff` or `git format-patch`
+   and pastes it to chat.
+4. Operator reviews and re-enacts the edit (or `git apply`s the
+   patch) on the Windows checkout.
+5. Operator runs `git add / commit / push` from Windows.
+6. Hermes runs `git pull --ff-only` on the VPS.
+7. Hermes continues with downstream work (Coolify rebuild, smoke).
+
+No commit should sit on the VPS's local `main` indefinitely. If
+Hermes commits locally (e.g. for a clean pre-flight), the commit
+should be stashed or exported to the operator within the same
+session; it must not persist across sessions.
+
+**Follow-ups**:
+
+- If the project ever adds a second operator / agent, revisit
+  this decision — the friction scales linearly with contributors.
+- If we ever add CI / GitHub Actions that need to push back to
+  main (auto-dependency-updates, formatting bots), we'll need a
+  bot account with its own deploy key. Not an issue today.
+
+---
+
 ## 2026-04-23 (night) — Pre-flight deadlock unblock (G26)
 
 **Agent**: Cascade (operator's laptop), after Hermes correctly

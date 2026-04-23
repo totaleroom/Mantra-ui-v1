@@ -20,6 +20,8 @@ containers and disk layout as verified by inventory scan.
 | Fact | Value |
 |------|-------|
 | Repo path | `/root/project/web-apps/Mantra-ui-v1` |
+| Canonical remote | `https://github.com/totaleroom/Mantra-ui-v1.git` (HTTPS, operator-owned) |
+| Push authority | **Operator-only.** Hermes has no GitHub credentials on this VPS — no deploy key, no PAT, no `gh` auth. Hermes commits locally OR writes entries to `/tmp/` and pastes them to chat; operator performs every `git push`. |
 | Compose project name | `mantra-ui-v1` (Coolify-derived, from dir name) |
 | Container names | `mantra_frontend`, `mantra_backend`, `mantra_postgres`, `mantra_redis`, `mantra_evolution` (exactly as defined in `docker-compose.yaml` — with underscore) |
 | Orchestrator | **Coolify** (runs as a container, not systemd) |
@@ -121,31 +123,62 @@ You **read** these, never **write** these without approval.
 
 ## Standard workflow when the user gives you a task
 
+Because push authority lives with the operator, the workflow below
+splits into **"Hermes does"** and **"operator does"** phases. Never
+blur the line.
+
 ```
-1. Read the task.
-2. Read .agent/ if you haven't this session.
-3. git -C /root/project/web-apps/Mantra-ui-v1 pull origin main
-   (substitute your REPO_ROOT if it ever differs; see VPS layout facts above)
-4. Draft a plan in your head (file list, approach). Share it.
-5. Create a feature branch: git checkout -b fix/<kebab-slug>
-6. Make the minimal change. Follow 03-conventions.md.
-7. Run verification blocks that apply (always Block A; also B if Go changed).
-8. git add <specific files> && git commit -m "<type>: <subject>"
-9. git push origin fix/<kebab-slug>
-10. Open a PR description in chat for the operator. They merge.
-11. Coolify auto-deploys on merge. You watch logs.
-12. Append entry to .agent/07-task-log.md AFTER merge.
+Hermes does:
+  1. Read the task.
+  2. Read .agent/ if you haven't this session.
+  3. git -C /root/project/web-apps/Mantra-ui-v1 fetch origin
+     git -C /root/project/web-apps/Mantra-ui-v1 pull --ff-only origin main
+     (substitute REPO_ROOT if it differs; see VPS layout facts above)
+  4. Draft a plan in your head (file list, approach). Share it in chat.
+  5. Wait for operator approval of the plan.
+  6. Make the minimal change on disk. Follow 03-conventions.md.
+  7. Run verification blocks that apply (always Block A; also B if
+     Go changed).
+  8. Export the change for the operator. Choose ONE:
+        (a) `git diff` output pasted into chat for small changes;
+        (b) `git format-patch` piped to /tmp/<slug>.patch and
+            content pasted into chat for multi-file changes;
+        (c) full file content pasted into chat for new files.
+     Pick whichever is most copy-pasteable for the operator.
+  9. Wait for operator to commit + push from Windows.
+ 10. git pull --ff-only origin main  — now your VPS is in sync again.
+ 11. Watch Coolify / docker compose for the auto-deploy. Confirm the
+     rebuild succeeded with the usual smoke checks.
+ 12. Write a `07-task-log.md` entry to /tmp/hermes-tasklog-entry.md
+     and paste it to chat. Operator appends to the real file and
+     pushes.
+
+Operator does:
+  A. Review the diff/patch Hermes pasted.
+  B. Apply to local Windows checkout (copy-paste, `git apply`, or
+     re-edit from scratch if the diff is small).
+  C. git add <files> && git commit -m "<type>: <subject>"
+  D. git push origin main
+  E. Tell Hermes "pushed, pull it". Return to Hermes step 10.
 ```
+
+**Why this shape**: Hermes cannot authenticate to GitHub, so any
+branch Hermes commits to locally is stranded on the VPS until the
+operator does something. Rather than accumulate stranded commits,
+we keep Hermes's changes in the working tree (or briefly committed
+to a local branch, then reset) and hand the change off as diff
+text. Operator is the bridge to origin.
 
 ## Deployment pathway (this project)
 
 ```
-Hermes push → GitHub main (after operator merge)
-           → GitHub webhook
-           → Coolify on VPS
-           → docker compose pull/build/up
-           → Traefik rotates to new containers
-           → Hermes runs smoke check
+Hermes edits files on VPS
+           → Hermes pastes diff/patch to chat
+           → Operator reviews & pushes from Windows
+           → GitHub main updated
+           → Coolify webhook fires (or manual redeploy)
+           → docker compose pull/build/up on VPS
+           → Hermes runs smoke check + reports
 ```
 
 **Hermes does NOT run `docker compose up -d` on production directly.** That is
@@ -245,8 +278,10 @@ command to keep working if the container name changes.
 
 ## Identity discipline
 
-When you commit, use this git identity so the operator can distinguish your
-commits from theirs:
+If (and only if) you must create a local commit for your own
+bookkeeping — e.g. `git stash apply && git commit` to get a clean
+working tree for pre-flight — use this git identity so operator
+can distinguish your commits from theirs if they ever leave the VPS:
 
 ```bash
 git config user.name "Hermes (AI Agent)"
