@@ -112,9 +112,19 @@ services:
       DATABASE_ENABLED:              "true"
       DATABASE_CONNECTION_URI:       postgresql://${POSTGRES_USER:-mantra}:${POSTGRES_PASSWORD}@postgres:5432/evolution_db?schema=public
       DATABASE_CONNECTION_CLIENT_NAME: evolution_db
-      REDIS_ENABLED:                 "true"
-      REDIS_URI:                     redis://redis:6379
-      REDIS_PREFIX_KEY:              evolution
+      # Evolution v2.2+ split its Redis config into a CACHE_REDIS_*
+      # namespace. The legacy REDIS_* keys (v2.1) are still parsed for
+      # the database layer but IGNORED by the cache client, which then
+      # spam-logs "[Redis] redis disconnected" forever and answers
+      # every HTTP call with a 500. Use the canonical v2.3 names below.
+      # Includes /6 so Evolution's Redis traffic lands on db index 6
+      # (keeps it isolated from anything else using db 0).
+      CACHE_REDIS_ENABLED:           "true"
+      CACHE_REDIS_URI:               redis://redis:6379/6
+      CACHE_REDIS_PREFIX_KEY:        evolution
+      CACHE_REDIS_TTL:               "604800"
+      CACHE_REDIS_SAVE_INSTANCES:    "false"
+      CACHE_LOCAL_ENABLED:           "false"
       CORS_ORIGIN:                   ${FRONTEND_URL:-*}
       CORS_METHODS:                  "GET,POST,PUT,DELETE,OPTIONS"
       CORS_CREDENTIALS:              "true"

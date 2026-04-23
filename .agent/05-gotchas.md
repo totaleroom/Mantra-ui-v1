@@ -431,3 +431,52 @@ tries to create or alter them.
 
 **Never re-enable AutoMigrate** as a shortcut. Having two schema
 sources of truth is the root cause; picking one (init.sql) is the fix.
+
+---
+
+## G23 — Evolution v2.2+ split Redis config into CACHE_REDIS_* namespace
+
+**Symptom**: Evolution container is `Up` (not restarting) and its
+HTTP server responds on :8080, but every API call returns HTTP 500
+and the container log spams
+
+```
+[Redis] redis disconnected
+[Redis] redis disconnected
+[Redis] redis disconnected
+```
+
+several times per second. Postgres side of Evolution works fine
+(migrations apply, `evolution_db` is populated).
+
+**Cause**: Evolution v2.1 had a single `REDIS_ENABLED` /
+`REDIS_URI` / `REDIS_PREFIX_KEY` config that drove both the database
+layer and the cache/session layer. v2.2+ split these. The database
+layer is still configured by `DATABASE_*` (which we already set —
+see G-entry above), but the cache/session client now reads from a
+`CACHE_REDIS_*` namespace. The legacy `REDIS_*` keys are silently
+ignored by the cache client — it falls through to "no config", tries
+to connect to an undefined address, fails, and retries in a tight
+loop.
+
+**Fix** (done 2026-04-23): replaced the three legacy keys with
+
+```yaml
+CACHE_REDIS_ENABLED:        "true"
+CACHE_REDIS_URI:            redis://redis:6379/6
+CACHE_REDIS_PREFIX_KEY:     evolution
+CACHE_REDIS_TTL:            "604800"
+CACHE_REDIS_SAVE_INSTANCES: "false"
+CACHE_LOCAL_ENABLED:        "false"
+```
+
+The `/6` routes Evolution's traffic to Redis database index 6 so it
+doesn't mingle with the main app's cache on db 0. `CACHE_LOCAL_ENABLED=false`
+forces Evolution to error loudly if the Redis connection itself
+fails, rather than silently falling back to an in-memory cache that
+loses WhatsApp session state on container restart.
+
+**Diagnostic tip**: any env-var documentation search for Evolution
+must match the pinned image tag (`evoapicloud/evolution-api:v2.3.7`).
+Docs on `atendai/evolution-api` or untagged "latest" examples online
+typically reference v2.1 schema and will mislead you.

@@ -5,6 +5,39 @@
 
 ---
 
+## 2026-04-23 (late afternoon) — Evolution Redis config finished; full stack green
+
+**Agent**: Cascade, after Hermes reported a successful smoke test with
+one "Evolution [Redis] redis disconnected" spam as the only remaining
+issue.
+
+**What**: With DATABASE_PROVIDER fixed earlier, the Evolution container
+booted far enough to apply its DB migrations and bind :8080. But its
+cache/session client still couldn't reach Redis and spammed
+"[Redis] redis disconnected" — every HTTP call returned 500.
+
+**Root cause**: Evolution v2.2+ moved Redis config into a
+`CACHE_REDIS_*` namespace. The legacy `REDIS_*` env keys we inherited
+from v2.1 only drive the database layer; the cache client silently
+ignored them and tried to connect to nothing.
+
+**Changes**:
+
+- `docker-compose.yaml` — replaced the three legacy `REDIS_*` keys
+  with six canonical `CACHE_REDIS_*` keys. Evolution now points at
+  `redis://redis:6379/6` (db index 6, isolated from the main app's
+  db 0). `CACHE_LOCAL_ENABLED=false` prevents a silent in-memory
+  fallback that would lose WhatsApp sessions on restart.
+- `.agent/05-gotchas.md` — new G23 documents the symptom, v2.1→v2.2
+  schema split, and a reminder to always match Evolution docs to the
+  pinned image tag.
+
+**Verification pending**: awaits a second Hermes pass. Expected log
+shape: Evolution container quiet on Redis (no disconnect spam), HTTP
+200 on `/manager` and `/instance/connect/<instance>`.
+
+---
+
 ## 2026-04-23 (afternoon) — Fix backend crash-loop + Evolution v2.3 env schema
 
 **Agent**: Cascade (operator's laptop), responding to a Hermes report
