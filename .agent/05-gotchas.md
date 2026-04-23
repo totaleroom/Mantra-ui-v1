@@ -540,3 +540,69 @@ use dynamic imports inside the action function.
 - `next/*` modules
 - Database/auth utilities that are server-safe
 - Schema/types (not implementation with side effects)
+
+---
+
+## G26 — Pre-flight deadlock: untracked operator files + script +x mode bit
+
+**Symptom**: `scripts/hermes-check.sh` exits 1 at Step 0 with two
+categories of failure that form a loop:
+
+1. `git status --porcelain` emits `??` lines for operator-owned
+   untracked files (`.env2`, `.windsurf/`, local notes). The
+   pre-flight check `test -z "$(git status --porcelain)"` fails
+   because the output is non-empty.
+
+2. `scripts/*.sh` checked in at mode 0644. The runbook's Step 1
+   `chmod +x scripts/*.sh` raises disk mode to 0755 but HEAD still
+   says 0644, so git reports each script as ` M`. `git checkout
+   HEAD -- scripts/*.sh` resets disk mode to 0644 but the NEXT
+   pre-flight requires `chmod +x` again, re-dirtying the tree.
+
+Agents correctly refuse to `rm` the untracked files (operator
+owns them) or skip pre-flight (violates persona P3), and end up
+stuck between options A, B, C with no clean path.
+
+**Cause**: Two legitimate bugs, not improvisation:
+
+- **`hermes-check.sh` conflates "untracked" with "dirty".**
+  Untracked files do not block `git pull --ff-only`. The check
+  should only fail on *modified tracked* files.
+- **The repo doesn't store the executable bit.** On Windows
+  (where much of this codebase is authored) `core.fileMode` is
+  typically false and `chmod +x` is meaningless, so contributors
+  never commit the `+x` bit. On Linux it is mandatory to run
+  shell scripts, so Hermes has to chmod on every deploy, and
+  that creates a mode-diff every time.
+
+**Fix**:
+
+1. In `scripts/hermes-check.sh`, change the cleanliness check to
+   ignore untracked files:
+   ```bash
+   git status --porcelain | grep -v '^??'
+   ```
+   Also surface the untracked count as a WARN line so the operator
+   sees the untracked files exist without being blocked by them.
+
+2. Commit the `+x` bit for every shell script so `chmod +x` is a
+   no-op on subsequent pulls:
+   ```bash
+   git update-index --chmod=+x scripts/*.sh
+   git commit -m "chore(scripts): mark shell scripts executable in index"
+   git push
+   ```
+   After this commit lands, `git diff` on any fresh checkout shows
+   nothing even on Linux, because HEAD and disk both agree on
+   mode 0755.
+
+**Prevention**:
+
+- Every new shell script checked in MUST be added with
+  `git update-index --chmod=+x path/to/script.sh` before commit,
+  so Linux agents don't have to chmod in the runbook.
+- `hermes-check.sh` must continue to tolerate untracked files.
+  The operator's working directory is not our authority.
+- If a future pre-flight check needs to enforce "no stray test
+  artifacts", add an explicit grep against known-bad patterns
+  (e.g. `*.tmp`, `*.log`) rather than a blanket untracked check.

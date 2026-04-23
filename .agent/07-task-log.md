@@ -5,6 +5,72 @@
 
 ---
 
+## 2026-04-23 (night) — Pre-flight deadlock unblock (G26)
+
+**Agent**: Cascade (operator's laptop), after Hermes correctly
+stopped at Step 0 pre-flight with the A/B/C options report.
+
+**What**: Hermes identified a real deadlock:
+
+1. `hermes-check.sh` rejected untracked operator files (`.env2`,
+   `.windsurf/`) as "dirty working tree".
+2. Shell scripts checked in at mode 0644, so every `chmod +x`
+   re-dirtied the tree; `git checkout` reverted mode; loop.
+
+All three options Hermes offered were wrong exits: (A) `rm`
+violated "leave untracked files alone", (B) "patch the script"
+was correct direction but Hermes didn't have authority to edit
+docs/scripts without operator approval per 08-hermes-handoff,
+(C) "skip pre-flight" violated persona P3 (verify empirically).
+
+Correct path: fix both root causes, not improvise around them.
+
+**Changes**:
+
+- `scripts/hermes-check.sh` — "repo has clean working tree" check
+  now filters `^??` lines (untracked) before requiring empty
+  output. Also prints an informational warning with the untracked
+  count so the operator sees what IS there without being blocked.
+
+- `.agent/05-gotchas.md` — added G26 documenting the deadlock
+  pattern with a 2-part fix: patch the check (done in this commit)
+  + commit `+x` bit via `git update-index --chmod=+x scripts/*.sh`
+  (operator must run before pushing; see Follow-ups).
+
+**Verification**:
+
+- Check logic reviewed statically. The new grep filter `grep -v
+  '^??'` correctly matches porcelain's untracked prefix.
+- Empty porcelain → empty grep output → test -z passes.
+- Modified tracked file → ` M path` line → grep keeps it → test -z
+  fails, which is what we want.
+- Untracked file → `?? path` line → grep drops it → does not fail.
+
+**Follow-ups for this commit's push**:
+
+Before `git push`, the operator must run:
+
+```bash
+git update-index --chmod=+x scripts/*.sh
+git add scripts/hermes-check.sh .agent/05-gotchas.md .agent/07-task-log.md
+git commit -m "fix(agent): unblock Hermes pre-flight deadlock (G26)"
+git push origin main
+```
+
+The `update-index --chmod=+x` is what permanently fixes part 2
+of the deadlock. It has no effect on Windows working tree (git
+core.fileMode is usually false) but sets mode 0755 in the index,
+which Linux checkouts (Hermes on VPS) will honor on pull.
+
+After Hermes pulls:
+
+1. `git status` on VPS should show no mode diffs on `scripts/*.sh`.
+2. `bash scripts/hermes-check.sh` should pass with at most WARN
+   lines for `.env2` / `.windsurf/` (informational).
+3. Hermes can then proceed to the frontend rebuild.
+
+---
+
 ## 2026-04-23 (late evening) — VPS layout audit; sync docs + pre-flight script to reality
 
 **Agent**: Cascade (operator's laptop), prompted after Hermes's first

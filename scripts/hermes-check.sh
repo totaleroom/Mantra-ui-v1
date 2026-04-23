@@ -102,8 +102,20 @@ bold "Repository"
 check "repo directory exists"       test -d "$REPO_ROOT"
 check "repo is a git checkout"      test -d "$REPO_ROOT/.git"
 if [ -d "$REPO_ROOT/.git" ]; then
-  check "repo has clean working tree"  bash -c "cd '$REPO_ROOT' && test -z \"\$(git status --porcelain)\""
+  # Only fail on *modified tracked* files (lines starting with ' M', 'M ', 'MM',
+  # 'A ', 'D ', 'R ', etc.). Untracked files (lines starting with '??') belong
+  # to the operator — things like .env, .env2, .windsurf/, local notes —
+  # and do not block `git pull --ff-only`, so they are not our concern here.
+  check "repo has clean tracked tree (untracked files ignored)" \
+    bash -c "cd '$REPO_ROOT' && test -z \"\$(git status --porcelain | grep -v '^??')\""
   check "remote origin reachable"   bash -c "cd '$REPO_ROOT' && git ls-remote --exit-code origin HEAD"
+
+  # Surface what IS untracked so the operator is aware — warn, don't fail.
+  UNTRACKED_COUNT=$(cd "$REPO_ROOT" && git status --porcelain | grep -c '^??' || true)
+  if [ "${UNTRACKED_COUNT:-0}" -gt 0 ]; then
+    yellow "  ! ${UNTRACKED_COUNT} untracked path(s) present (informational; not a failure)"
+    WARN=$((WARN + 1))
+  fi
 fi
 check ".agent/ directory present"   test -d "$REPO_ROOT/.agent"
 check "compose file present"        test -f "$COMPOSE_FILE"
