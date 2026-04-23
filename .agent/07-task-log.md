@@ -60,8 +60,14 @@ real friction points that had nothing to do with the Phase A/B code:
   installs still satisfied the import. See G20.
 - `.agent/12-vps-deploy-runbook.md` — Step 3 now references the helper
   script; OOM remediation documented inline.
-- `.agent/05-gotchas.md` — new G20 explains the tsconfig/docs/drizzle
-  interaction and why the file must not be deleted.
+- `.agent/05-gotchas.md` — new G20 + G21 explain the tsconfig/docs/drizzle
+  interaction and the NEXT_PHASE build-time guard.
+- `lib/env.ts` — `validateServerEnv` now also checks `NEXT_PHASE`.
+  During `next build`, Next.js sets `NEXT_PHASE=phase-production-build`
+  and auto-sets `NODE_ENV=production`; the old validator threw because
+  JWT_SECRET wasn't in the build context (by design: `.dockerignore`
+  excludes `.env`). Now we warn during build, throw at runtime — the
+  runtime behaviour operators care about is preserved. See G21.
 
 **Verification (local)**:
 

@@ -345,3 +345,45 @@ schema documentation but is invisible to the TypeScript compiler.
 description of the old schema shape, useful when migrating data from
 a pre-Phase-A dump. If you want to keep doc files out of the build,
 add them to `tsconfig.exclude`; don't delete them.
+
+---
+
+## G21 — `lib/env.ts` used to throw during `next build`, forcing secrets into build context
+
+**Symptom**: Docker build dies in the `builder` stage with
+
+```
+[Mantra] FATAL: Invalid environment variables:
+  • JWTSECRET: Required
+```
+
+even though `.env` exists on disk and has a valid `JWT_SECRET`.
+
+**Cause**: `app/layout.tsx` imports `@/lib/env` for its side-effect
+validation. The old validator did
+
+```ts
+if (process.env.NODE_ENV === 'production') throw new Error(...)
+```
+
+unconditionally. Next.js always runs the layout module during
+`next build` (for RSC tree generation and static analysis) with
+`NODE_ENV=production` auto-set — so the validator tripped on
+every fresh Docker build. The "obvious" fixes are both wrong:
+
+- Baking `JWT_SECRET` into the image via `ARG`/`ENV` leaks a secret
+  into every compressed layer. Anyone who pulls the image can read it.
+- Removing `JWT_SECRET` from the schema or making it optional
+  defeats the entire point of the runtime validator.
+
+**Fix** (done 2026-04-23): the validator now also checks
+`process.env.NEXT_PHASE`. Next.js sets this to
+`phase-production-build` only during the build; at runtime (when
+`node server.js` actually boots) it is unset. So during build we
+*warn* about missing server secrets (which is fine — they're read
+from `process.env` at runtime, not baked into the bundle), and at
+runtime we *throw* if they're missing.
+
+**Never "solve" a build-time env-var error by weakening the schema or
+passing the secret as a build ARG.** Server secrets belong in
+`env_file:` at runtime, not in any layer of the Docker image.

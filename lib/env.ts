@@ -82,7 +82,22 @@ function validateServerEnv() {
       `\n[Mantra] FATAL: Invalid environment variables:\n${errors}\n\n` +
       `Copy .env.example to .env and set all required values.\n`
 
-    if (process.env.NODE_ENV === 'production') {
+    // During `next build`, Next.js sets NEXT_PHASE to
+    // 'phase-production-build'. At that point this module is loaded
+    // by the static analyzer / SSG page collector, NOT by a running
+    // server — so throwing here forces operators to leak real
+    // secrets into the build context (breaking .dockerignore hygiene).
+    // Server-only secrets (JWT_SECRET, DATABASE_URL, etc.) are read
+    // from `process.env` at runtime, not baked into the bundle, so
+    // we simply warn during the build phase and let the container's
+    // `env_file:` pass the real values when the server actually boots.
+    //
+    // At RUNTIME (next start / node server.js) NEXT_PHASE is unset and
+    // NODE_ENV is still 'production', so the throw below fires as
+    // intended and a misconfigured prod server fails fast.
+    const isBuildPhase = process.env.NEXT_PHASE === 'phase-production-build'
+
+    if (process.env.NODE_ENV === 'production' && !isBuildPhase) {
       throw new Error(message)
     } else {
       console.warn(message)
