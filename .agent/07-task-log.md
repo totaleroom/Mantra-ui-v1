@@ -5,6 +5,104 @@
 
 ---
 
+## 2026-04-23 (late evening) — VPS layout audit; sync docs + pre-flight script to reality
+
+**Agent**: Cascade (operator's laptop), prompted after Hermes's first
+deploy attempt of commit `<frontend-login-fix>` stopped at Step 0
+pre-flight. Hermes reported the correct facts: `hermes-check.sh`
+hard-coded `/opt/mantra`, but the real repo lives at
+`/root/project/web-apps/Mantra-ui-v1`.
+
+**What**: Performed a read-only VPS inventory via Hermes, then
+rewrote every doc and script reference that assumed `/opt/mantra`.
+
+**Inventory highlights** (from `/tmp/mantra-vps-inventory-…md`):
+
+- Repo path: `/root/project/web-apps/Mantra-ui-v1`
+- Host: Debian 12, 2 cores, 3.6 GB RAM, 43 GB free
+- Orchestrator: Coolify (runs as container under `/root/coolify/`)
+- Containers: `mantra_{frontend,backend,postgres,redis,evolution}`
+  (with underscore — the earlier "mantrabackend" report was a
+  rendering glitch in chat; `docker ps` shows the underscore form)
+- Network: `mantra-ui-v1_default`
+- Volumes: `mantra-ui-v1_postgres_data`, `mantra-ui-v1_redis_data`
+- Public URL: `http://43-157-223-29.sslip.io:5000` (plain HTTP; no
+  Traefik/TLS on this deploy)
+- Stale `.env*` files at repo root: `.env2`, `.env.backup`, `.env.bak`
+  (all contain rotated secrets from prior `generate-env.sh --write`
+  runs; not deleted pending operator audit)
+- Dirty scripts from previous Hermes session: 4 files with 0-line
+  diffs (likely mode/timestamp only — safe to `git checkout`)
+- Inside `mantra_frontend`: `BACKEND_INTERNAL_URL=http://backend:3001`
+  is correctly wired. The login bug is therefore waiting only on a
+  rebuild of the frontend image so the G24 lazy-env fix takes effect.
+
+**Changes**:
+
+- `scripts/hermes-check.sh` — replaced hard-coded `REPO_ROOT=/opt/mantra`
+  with a 4-step resolver: explicit env var → `git rev-parse
+  --show-toplevel` → parent-of-script-dir → legacy fallback. Prints
+  the resolved `REPO_ROOT` + `COMPOSE_FILE` at the top of the output
+  so spurious failures are easy to diagnose.
+- `.agent/08-hermes-handoff.md` — added a "VPS layout facts" block
+  up top so Hermes sees the correct paths before any other content.
+  Updated the pre-flight-check subsection, cheat-sheet commands, and
+  credential-location table. Removed the last `/opt/mantra` reference
+  from "You ARE authorized to read".
+- `.agent/12-vps-deploy-runbook.md` — fixed Step 0 `pwd`, Step 2
+  generate-env guidance (now explicit that re-running rotates all
+  secrets), Step 3 compose-file path + noted the public overlay is
+  active on this VPS, Step 4/Step 5 force-recreate + preflight URL
+  examples, Step 6 smoke-test uses the sslip.io URL.
+- `.agent/13-operating-persona.md` — added §8 "Map of Hermes's home"
+  with host spec, filesystem tree, container table, Coolify
+  orchestration notes, env-resolution path, and the `REPO_ROOT` /
+  `COMPOSE_FILE` / `ENV_FILE` path constants. §9 retains the
+  one-sentence summary.
+
+**Verification**:
+
+- Pure-docs + one script edit. Script logic reviewed for shell
+  portability (`set -uo pipefail`, `command -v`, quoted expansions).
+- Confirmed no remaining `/opt/mantra` strings in any path Hermes
+  actually executes. The string still appears in:
+    * `scripts/hermes-check.sh` — inside the legacy-fallback branch
+      (emits a yellow warning if hit; documented in header comment).
+    * `.agent/09-single-user-deployment.md` and `scripts/README.md` —
+      as install-example paths for the nightly Postgres backup cron.
+      These are operator-tunable; the operator picks the ops path.
+    * `scripts/backup-postgres.sh` header comment — cron install
+      example, same situation as above.
+    * `.agent/12-vps-deploy-runbook.md` "What to NEVER do" table —
+      cautionary example of a wrong action (`rsync ~/Downloads
+      /mantra-v2/. /opt/mantra/`). The path here is illustrative; the
+      point is "don't clobber the repo".
+  None of those fire during a Hermes runbook step. Verified with:
+  ```
+  grep -rn '/opt/mantra' .agent scripts \
+    | grep -vE '(legacy fallback|backup|rsync.*mantra-v2|hermes-check\.sh header)'
+  ```
+- Cross-checked every container name in 13-operating-persona §8
+  against the `container_name:` directives in `docker-compose.yaml`.
+  They match: `mantra_postgres`, `mantra_redis`, `mantra_evolution`,
+  `mantra_backend`, `mantra_frontend`.
+
+**Follow-ups for Hermes on next deploy**:
+
+- Pre-flight will now pass when invoked from the repo directory:
+  `cd /root/project/web-apps/Mantra-ui-v1 && bash scripts/hermes-check.sh`
+- Stash the 4 dirty scripts (`git stash push -u -m "previous-session"
+  -- scripts/*.sh`) before `git pull` — the diffs are 0-line and safe
+  to discard, but stashing keeps them recoverable for 30 days.
+- After `git pull`, `chmod +x scripts/*.sh` is still required on
+  this VPS (scripts lose the +x bit in transit).
+- Then proceed with the original frontend rebuild (Step 3 of the
+  runbook). The login fix ships as part of the same commit chain.
+- Stale `.env*` backups at repo root: flag for future cleanup after
+  operator audits them for any leaked secrets. Do not delete now.
+
+---
+
 ## 2026-04-23 (evening) — Added operating persona for future agents
 
 **Agent**: Cascade (operator's laptop)

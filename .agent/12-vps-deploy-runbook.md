@@ -16,9 +16,11 @@
 ## Pre-flight
 
 ```bash
-# 1. You are on the VPS, in /opt/mantra, as the deploy user.
-pwd                               # → /opt/mantra
-whoami                            # → deploy (or whatever ops chose)
+# 1. You are on the VPS in the repo checkout. Canonical path:
+REPO=/root/project/web-apps/Mantra-ui-v1
+cd "$REPO"
+pwd                               # → /root/project/web-apps/Mantra-ui-v1
+whoami                            # → root (this VPS; ops may change this)
 
 # 2. Confirm tool versions. If any missing, STOP and report.
 docker --version                  # ≥ 24
@@ -65,13 +67,26 @@ shouldn't have. STOP and report the log.
 
 ---
 
-## Step 2 — Generate the .env (operator pre-approved)
+## Step 2 — Generate the .env (operator pre-approved ONLY)
+
+**First-time deploy only.** If `.env` already exists and the backend
+is healthy, DO NOT re-run this — it rotates every secret including
+`JWT_SECRET`, which invalidates every active session and every signed
+artifact. See G17 in `05-gotchas.md`.
 
 ```bash
-# Creates /opt/mantra/.env with strong random secrets + URLs derived
-# from --public-url. Auto-backs up any existing .env.
-./scripts/generate-env.sh --public-url=https://mantra.<operator-domain> --write
+# On THIS VPS the operator ran this once with:
+#   --public-url=http://43-157-223-29.sslip.io:5000
+# which produced the plain-HTTP sslip.io deployment. If you are
+# re-deploying to a real domain later, use that domain instead.
+./scripts/generate-env.sh --public-url=<public-url> --write
 ```
+
+This VPS has three stale env backups at the repo root (`.env2`,
+`.env.backup`, `.env.bak`) from past runs. They are **not** active—
+only `.env` is read by Coolify. Do not delete the backups without
+operator approval; they may contain rotated secrets that need to
+be audited before disposal.
 
 If you hit `Permission denied`, Step 1's `chmod +x` was skipped. Go back.
 
@@ -93,6 +108,12 @@ The base `docker-compose.yaml` keeps service ports internal so Coolify's
 Traefik can route them. For a smoke-test on a bare VPS reached via
 sslip.io, layer on `docker-compose.public.yaml` (committed to the repo)
 which binds 5000 / 3001 / 8080 to the host.
+
+> **Current deploy (2026-04-23)**: this VPS is running the `public`
+> overlay — port 5000 is exposed directly on the host and reachable
+> at `http://43-157-223-29.sslip.io:5000`. No TLS, no Traefik on top.
+> When the operator points a real domain at this server, Traefik/
+> Coolify TLS will take over and the public overlay becomes unneeded.
 
 ```bash
 # --- 3a. Pull large images first so Docker Hub errors surface clearly ---
@@ -124,9 +145,12 @@ If any container stays `Restarting`, do NOT edit code or compose yet.
 Read its logs first:
 
 ```bash
-docker compose -f docker-compose.yaml -f docker-compose.public.yaml \
-  logs <service> --tail=120
+docker compose logs <service> --tail=120
 ```
+
+(You are in the repo directory thanks to Step 0, so `docker compose`
+infers the compose file and project name automatically. Don't pass
+`-f` flags unless you need to override.)
 
 **OOM kill signal**: if `docker compose ps -a` shows a service
 `Exited (137)`, the kernel OOM-killed it. The frontend Dockerfile caps
@@ -148,8 +172,7 @@ Then re-run `./scripts/vps-build.sh`.
 `vps-build.sh` already prints this at the end of its run. To re-fetch:
 
 ```bash
-docker compose -f docker-compose.yaml -f docker-compose.public.yaml \
-  logs backend --tail=60 | grep -A 20 "Boot Report"
+docker compose logs backend --tail=60 | grep -A 20 "Boot Report"
 ```
 
 You will see a pretty-printed checklist. Every line is a gate.
@@ -162,8 +185,7 @@ See `.agent/02-codebase-map.md` for the source (`boot_banner.go`).
   you EXACTLY which env var is wrong. Fix that value in `.env`, then:
 
   ```bash
-  docker compose -f docker-compose.yaml -f docker-compose.public.yaml \
-    up -d --force-recreate backend
+  docker compose up -d --force-recreate backend
   ```
 
 ---
@@ -173,11 +195,17 @@ See `.agent/02-codebase-map.md` for the source (`boot_banner.go`).
 This is the authoritative health report, machine-readable.
 
 ```bash
-# From the VPS itself (localhost, before DNS / TLS):
+# From the VPS itself (localhost, before any public routing):
 curl -s http://localhost:3001/health | jq
 # → expect {"status":"ok", "db":"connected", "redis":"connected", ...}
 
-# Through the public domain (after Coolify/Traefik TLS):
+# Through the public URL.
+# On THIS VPS (no TLS, sslip.io) use plain http + port 5000:
+curl -s http://43-157-223-29.sslip.io:5000/api/system/preflight \
+     -H "Cookie: mantra_session=<super-admin-jwt>" | jq '.overall, .checks[]|select(.status!="ok")'
+
+# When the operator attaches a real domain + Traefik/Coolify TLS,
+# switch to:
 curl -s https://api.<operator-domain>/api/system/preflight \
      -H "Cookie: mantra_session=<super-admin-jwt>" | jq '.overall, .checks[]|select(.status!="ok")'
 ```
@@ -192,9 +220,13 @@ own fix.
 ## Step 6 — Smoke-test (browser, ~3 min)
 
 Use the checklist in `.agent/11-phase-2-4-deploy-smoke-test.md`.
-Summary:
+Summary — substitute your deployment's public URL in place of
+`<public-url>`:
 
-1. `https://mantra.<domain>/login` → login with `admin@mantra.ai` / default password.
+- Current VPS: `http://43-157-223-29.sslip.io:5000` (plain HTTP).
+- Future w/ domain: `https://mantra.<operator-domain>`.
+
+1. `<public-url>/login` → log in with `admin@mantra.ai` / bootstrap password.
 2. App must redirect to `/change-password`. Rotate to a real password.
 3. App must land on `/` (dashboard overview). No 404.
 4. `/diagnosis` must render the Blackbox panel with all checks green.
@@ -210,7 +242,7 @@ and `docker compose logs frontend --tail=200`, then report.
 One entry in `.agent/07-task-log.md`, top of file:
 
 ```md
-## <DATE> — Deploy <commit-short-hash> to <domain>
+## <DATE> — Deploy <commit-short-hash> to <public-url>
 
 **Agent**: Hermes on <hostname>
 

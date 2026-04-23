@@ -3,10 +3,51 @@
 # Run at the start of every Hermes session on the VPS.
 # Exit non-zero if anything is wrong — Hermes must report to operator.
 #
-# Usage: bash /opt/mantra/scripts/hermes-check.sh
+# Usage:
+#   bash scripts/hermes-check.sh                      # auto-detect repo root
+#   REPO_ROOT=/path/to/repo bash scripts/hermes-check.sh   # explicit override
+#
+# REPO_ROOT resolution order (first match wins):
+#   1. $REPO_ROOT env var (explicit override)
+#   2. `git rev-parse --show-toplevel` from the script's own directory
+#   3. Parent directory of this script's /scripts/ folder
+#   4. Hard-coded legacy fallback (/opt/mantra) — emits a warning
 set -uo pipefail
 
-REPO_ROOT="${REPO_ROOT:-/opt/mantra}"
+resolve_repo_root() {
+  # 1. Explicit override
+  if [ -n "${REPO_ROOT:-}" ]; then
+    echo "$REPO_ROOT"
+    return
+  fi
+
+  # Where this script actually lives on disk
+  local script_dir
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+
+  # 2. Walk up with git
+  if command -v git >/dev/null 2>&1; then
+    local git_root
+    git_root="$(cd "$script_dir" && git rev-parse --show-toplevel 2>/dev/null || true)"
+    if [ -n "$git_root" ] && [ -d "$git_root/.git" ]; then
+      echo "$git_root"
+      return
+    fi
+  fi
+
+  # 3. Script is in $REPO_ROOT/scripts/ by convention — go up one level
+  local parent
+  parent="$(dirname "$script_dir")"
+  if [ -f "$parent/docker-compose.yaml" ] || [ -d "$parent/.agent" ]; then
+    echo "$parent"
+    return
+  fi
+
+  # 4. Legacy fallback
+  echo "/opt/mantra"
+}
+
+REPO_ROOT="$(resolve_repo_root)"
 COMPOSE_FILE="$REPO_ROOT/docker-compose.yaml"
 
 red()    { printf '\033[31m%s\033[0m\n' "$*"; }
@@ -38,6 +79,12 @@ warn_if() {
 }
 
 bold "== Hermes Pre-flight Check =="
+echo "   REPO_ROOT   = $REPO_ROOT"
+echo "   COMPOSE_FILE = $COMPOSE_FILE"
+if [ "$REPO_ROOT" = "/opt/mantra" ] && [ ! -d "/opt/mantra" ]; then
+  yellow "   ! resolved REPO_ROOT to legacy default /opt/mantra which does not exist."
+  yellow "   ! export REPO_ROOT=/path/to/your/checkout or run this script from inside the repo."
+fi
 echo
 
 bold "Tools"

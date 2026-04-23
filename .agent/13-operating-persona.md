@@ -362,7 +362,123 @@ in a commit diff.
 
 ---
 
-## 8. One sentence that summarises all of the above
+## 8. Map of Hermes's home (physical & logical layout)
+
+> Snapshot from the 2026-04-23 inventory scan. If `docker ps`,
+> `git status`, or any other check today disagrees with what is
+> written here, STOP and update this section before proceeding.
+> Stale topology maps are worse than no map.
+
+### Host
+
+| Fact | Value |
+|------|-------|
+| OS | Debian 12 (Linux, 64-bit) |
+| CPU | 2 cores |
+| RAM | 3.6 GB total |
+| Disk | ~43 GB free on `/` |
+| Public IP hostname | `43-157-223-29.sslip.io` (sslip.io IP→hostname) |
+| TLS | **None**. Plain HTTP on port 5000. A real domain + Coolify/Traefik TLS is a future concern. |
+
+### Filesystem
+
+```
+/root/
+├── .ssh/                      # deploy keys (mode 600)
+├── .hermes/                   # Hermes own state (writable)
+├── hermes.env                 # Hermes auth token
+├── coolify/                   # Coolify install dir
+├── coolify-mcp/
+└── project/
+    └── web-apps/
+        └── Mantra-ui-v1/       ← THE REPO
+            ├── .env             ← ACTIVE (~2.6 KB)
+            ├── .env2            ← stale backup (audit only)
+            ├── .env.backup      ← stale backup
+            ├── .env.bak         ← stale backup
+            ├── .git/
+            ├── .agent/          ← you are reading a file here
+            ├── .windsurf/skills/frontend-build-verification/   ← untracked
+            ├── app/             ← Next.js app router
+            ├── backend/         ← Go/Fiber backend
+            ├── scripts/         ← hermes-check.sh, vps-build.sh, …
+            ├── docker-compose.yaml         ← Coolify's source of truth
+            ├── docker-compose.public.yaml  ← port-binding overlay (active here)
+            ├── docker-compose.dev.yaml
+            └── Dockerfile
+```
+
+### Containers (actual names, as `docker ps` reports them)
+
+| Service name | Container name | Host port | Internal port | Volume |
+|--------------|----------------|-----------|---------------|--------|
+| `frontend` | `mantra_frontend` | 5000 | 5000 | none |
+| `backend` | `mantra_backend` | 3001 | 3001 | none |
+| `postgres` | `mantra_postgres` | (internal only) | 5432 | `mantra-ui-v1_postgres_data` |
+| `redis` | `mantra_redis` | (internal only) | 6379 | `mantra-ui-v1_redis_data` |
+| `evolution` | `mantra_evolution` | 8080 | 8080 | none |
+
+Compose project name: `mantra-ui-v1` (derived from directory name by Coolify).
+Network: `mantra-ui-v1_default` (bridge). Service-name DNS is available
+inside this network, so the backend reaches Postgres at `postgres:5432`
+and the frontend reaches the backend at `http://backend:3001`.
+
+### Who orchestrates what
+
+- **Coolify** (itself a Docker container under `/root/coolify/`) is the
+  only thing that starts or stops our 5 containers. It reads
+  `/root/project/web-apps/Mantra-ui-v1/docker-compose.yaml` + the public
+  overlay and runs `docker compose up -d --build` on its own schedule.
+- `scripts/vps-build.sh` is a helper you can invoke manually when
+  Coolify's auto-deploy has not yet kicked in, but Coolify will
+  reconcile state on its next pass. Don't fight it.
+- The operator's local Cascade does NOT have shell access to this VPS.
+  You (Hermes) do. That is why the runbook is written for your hands.
+
+### Env resolution path (where does `JWT_SECRET` actually come from?)
+
+1. Coolify reads `/root/project/web-apps/Mantra-ui-v1/.env` at deploy
+   time.
+2. It injects those keys into each container's runtime environment per
+   the `environment:` and `${VAR}` references in `docker-compose.yaml`.
+3. Inside the container, Node/Go reads `process.env.JWT_SECRET` at
+   runtime. **Since the G24 fix, Node reads it lazily — never cache
+   env in module scope.**
+
+Verify the chain any time with:
+
+```bash
+cd /root/project/web-apps/Mantra-ui-v1
+grep '^JWT_SECRET=' .env | cut -c1-20            # disk
+docker exec mantra_frontend printenv JWT_SECRET | cut -c1-20   # runtime
+# both should start with the same characters.
+```
+
+### Public endpoints
+
+| What | URL | Note |
+|------|-----|------|
+| Login page | `http://43-157-223-29.sslip.io:5000/login` | Plain HTTP |
+| Backend health | `http://43-157-223-29.sslip.io:3001/health` | Publicly exposed (by public overlay) |
+| Evolution manager | `http://43-157-223-29.sslip.io:8080/` | Do not expose long-term |
+| Localhost equiv. | `http://localhost:5000`, `:3001`, `:8080` | Safer for curl from the VPS shell |
+
+### Paths you should know verbatim
+
+- `REPO_ROOT=/root/project/web-apps/Mantra-ui-v1`
+- `COMPOSE_FILE=$REPO_ROOT/docker-compose.yaml`
+- `ENV_FILE=$REPO_ROOT/.env`
+- `BUILD_LOG=/tmp/mantra-build.log`
+- Hermes own notes: `/root/.hermes/` (yours to manage)
+
+If any of these ever disagree with what you find on the disk, the
+next commit from Cascade will re-sync this section. Open a PR; do
+not just hard-code the new path in whatever runbook step you are
+executing.
+
+---
+
+## 9. One sentence that summarises all of the above
 
 **Change the smallest thing you can get away with, prove it
 works in the real environment, write down why you did it, and
