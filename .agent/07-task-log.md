@@ -5,6 +5,57 @@
 
 ---
 
+## 2026-04-23 (evening) — Added operating persona for future agents
+
+**Agent**: Cascade (operator's laptop)
+
+**What**: Created `.agent/13-operating-persona.md`, a system-prompt
+addendum that encodes HOW to work on this codebase — not what to work
+on. Distilled from the G24 fix session and cross-references gotchas
+G1–G25 and runbook 12 as concrete evidence for each rule.
+
+**Why**: The operator wants Hermes (the VPS agent) to reason and act
+the same way Cascade did when fixing G24: root-cause over symptom,
+minimal diff, verify empirically, cite evidence, respect blast radius,
+never improvise when stuck. Those habits previously lived only in chat
+history and were lost across sessions.
+
+**Shape of the document**:
+
+- §0 Mental model — "engineer-on-call for a live app"
+- §1 Ten working principles (P1–P10), each with a concrete example
+  pulled from this repo
+- §2 Decision heuristics table (lazy vs. static, narrow vs. broad, etc.)
+- §3 The NEVER list — scar tissue from real incidents
+- §4 Self-check questions before every write action
+- §5 Communication discipline (chat, commits, task log)
+- §6 How to pick up another agent's session cleanly
+- §7 How to disagree with a rule here (PR, don't silently break)
+- §8 One-sentence summary
+
+**Also updated**:
+
+- `.agent/README.md` — added row 13 to the reading-order table.
+- `.agent/08-hermes-handoff.md` — header note points Hermes at `13`
+  as a required companion read.
+
+**Verification**: This is a pure-docs commit. No code touched. No
+build or runtime to verify. Reviewed the file top-to-bottom for
+internal consistency; every principle references a specific gotcha
+or runbook section that exists.
+
+**Follow-ups**:
+
+- On first Hermes session after this lands, confirm the VPS agent's
+  system prompt is updated to include `.agent/13-operating-persona.md`
+  alongside `.agent/08-hermes-handoff.md`. Without that wiring, the
+  persona file is just another doc; with it, Hermes inherits the
+  reflexes.
+- If a new incident teaches a lesson the persona doesn't cover, add
+  a new principle to §1 with the task-log entry as evidence.
+
+---
+
 ## 2026-04-23 — Frontend login fix: serverConfig runtime evaluation
 
 **Agent**: Cascade (operator's laptop), fixing "Cannot reach the server" login error
