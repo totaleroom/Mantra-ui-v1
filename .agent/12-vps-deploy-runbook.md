@@ -89,37 +89,67 @@ grep -c '^[A-Z_]*=' .env           # should report ≥ 18 lines set
 
 ## Step 3 — Build + boot containers
 
+The base `docker-compose.yaml` keeps service ports internal so Coolify's
+Traefik can route them. For a smoke-test on a bare VPS reached via
+sslip.io, layer on `docker-compose.public.yaml` (committed to the repo)
+which binds 5000 / 3001 / 8080 to the host.
+
 ```bash
-# Pull large images first so you can see Docker Hub errors clearly.
+# --- 3a. Pull large images first so Docker Hub errors surface clearly ---
 docker pull pgvector/pgvector:pg15
 docker pull redis:7-alpine
-docker pull atendai/evolution-api:v2.2.3
+docker pull evoapicloud/evolution-api:v2.3.7
 
-# Now the full stack. This builds backend + frontend images.
-docker compose up -d --build
+# --- 3b. Kick off the actual build via the helper ---
+# `scripts/vps-build.sh` wraps `docker compose up -d --build` in
+# nohup + disown so it survives short CLI timeouts (Hermes's 60 s
+# envelope), redirects output to /tmp/mantra-build.log, then polls
+# container state every 45 s until all 5 services are Running.
+#
+# On a 4 GB VPS the first Next.js build usually takes 10–15 min
+# because it swaps; the helper waits up to 15 min before giving up.
+# Re-run the helper any time to re-poll — it won't double-build.
+./scripts/vps-build.sh
 ```
 
-Expected output:
+Expected milestones in `/tmp/mantra-build.log`:
 
-- `postgres` Started
-- `redis`    Started
-- `evolution` Started (healthy after ~15s)
-- `backend`  Started — may take 60–90s for first compile
-- `frontend` Started — may take 3–5 min for first Next.js build
+- `FROM golang:1.25-alpine ...` then backend `go build` finishes first
+- `[frontend builder] Creating optimized production build`
+- `[frontend builder] Compiled successfully`
+- `[frontend builder] Generating static pages`
+- Compose converges: postgres / redis / evolution / backend / frontend all "Running"
 
 If any container stays `Restarting`, do NOT edit code or compose yet.
 Read its logs first:
 
 ```bash
-docker compose logs <service> --tail=120
+docker compose -f docker-compose.yaml -f docker-compose.public.yaml \
+  logs <service> --tail=120
 ```
+
+**OOM kill signal**: if `docker compose ps -a` shows a service
+`Exited (137)`, the kernel OOM-killed it. The frontend Dockerfile caps
+Node heap at 1.5 GB to prevent this on 4 GB VPS, but if you still hit
+it, add a 4 GB swap file:
+
+```bash
+sudo fallocate -l 4G /swapfile && sudo chmod 600 /swapfile \
+  && sudo mkswap /swapfile && sudo swapon /swapfile \
+  && echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+```
+
+Then re-run `./scripts/vps-build.sh`.
 
 ---
 
 ## Step 4 — Read the boot banner
 
+`vps-build.sh` already prints this at the end of its run. To re-fetch:
+
 ```bash
-docker compose logs backend --tail=60 | grep -A 20 "Boot Report"
+docker compose -f docker-compose.yaml -f docker-compose.public.yaml \
+  logs backend --tail=60 | grep -A 20 "Boot Report"
 ```
 
 You will see a pretty-printed checklist. Every line is a gate.
@@ -132,7 +162,8 @@ See `.agent/02-codebase-map.md` for the source (`boot_banner.go`).
   you EXACTLY which env var is wrong. Fix that value in `.env`, then:
 
   ```bash
-  docker compose up -d --force-recreate backend
+  docker compose -f docker-compose.yaml -f docker-compose.public.yaml \
+    up -d --force-recreate backend
   ```
 
 ---

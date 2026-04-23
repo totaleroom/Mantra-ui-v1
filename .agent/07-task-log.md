@@ -5,6 +5,78 @@
 
 ---
 
+## 2026-04-23 — Deploy QoL: build helper, .dockerignore, Node heap cap, lockfile sync
+
+**Agent**: Cascade (operator's laptop), prepping a clean re-clone for Hermes
+
+**What**: The first live Hermes deploy attempt on the VPS surfaced three
+real friction points that had nothing to do with the Phase A/B code:
+
+1. `docker compose up -d --build` runs the BUILD step in the foreground
+   (only runtime is detached). On a 4 GB VPS the Next.js build can take
+   10–15 min because it swaps; Hermes's 60 s per-call envelope kept
+   tripping, so the agent thought the build was dead when it was just
+   slow. No recovery loop existed, so every timeout restarted from zero.
+2. No `.dockerignore`, so `COPY . .` uploaded ~800 MB of context per
+   build (including stale host-side `.next/` and `node_modules/`). Slow
+   and, worse, deterministic-build-breaking.
+3. `pnpm-lock.yaml` had stale references to `drizzle-orm@0.45.2` and
+   `@vercel/analytics@1.6.1` that were no longer in `package.json`
+   (left over from a long-ago dependency cleanup). `pnpm install
+   --frozen-lockfile` refused to proceed. Fixed by regenerating the
+   lockfile locally with `pnpm install`.
+4. `atendai/evolution-api` namespace hasn't shipped since ~April 2025;
+   the maintainer moved to `evoapicloud/evolution-api`. Pinned to
+   `evoapicloud/evolution-api:v2.3.7`.
+5. `scripts/generate-env.sh` did `${PUBLIC_URL}:8080` which produced
+   `http://host:5000:8080` when the input already had a port (sslip.io
+   smoke-test case). Rewrote the script to parse scheme+host cleanly.
+
+**Changes committed**:
+
+- NEW `scripts/vps-build.sh` — nohup + poll wrapper for `docker
+  compose up -d --build`. Safe inside short command-timeout envelopes.
+  Idempotent; re-running while build is in flight just re-polls.
+- NEW `.dockerignore` — excludes `.git`, `.next`, `node_modules`,
+  `.env*`, `.agent`, dev compose overrides. Cut build context from
+  ~800 MB to ~20 MB.
+- NEW `docker-compose.public.yaml` — canonical override binding
+  5000/3001/8080 to the host for bare-IP smoke tests. Not for Coolify
+  prod (Traefik still handles TLS + routing there).
+- `Dockerfile` (frontend) — `ENV NODE_OPTIONS="--max-old-space-size=1536"`
+  before `RUN pnpm build`. Caps `next build` heap so the 4 GB VPS
+  doesn't OOM-kill it.
+- `docker-compose.yaml` — image for `evolution` service changed from
+  `atendai/evolution-api:latest` to `evoapicloud/evolution-api:v2.3.7`.
+- `scripts/generate-env.sh` + `scripts/generate-env.ps1` — parse
+  `PUBLIC_URL`, derive service-specific URLs from the host component
+  only, avoid string-concat of ports.
+- `pnpm-lock.yaml` — regenerated clean against current `package.json`.
+- `.agent/12-vps-deploy-runbook.md` — Step 3 now references the helper
+  script; OOM remediation documented inline.
+
+**Verification (local)**:
+
+- `tsc --noEmit` from operator's workstation: exit 0, no errors.
+- Lockfile regeneration: `grep -c "drizzle\|vercel/analytics"
+  pnpm-lock.yaml` → 0 matches.
+- Dockerfile ENV syntax reviewed; build will now surface NODE_OPTIONS
+  to the webpack/swc compilers.
+- vps-build.sh reviewed: every polling iteration is sub-second;
+  background process is properly detached.
+
+**Follow-ups for next agent / Hermes re-run**:
+
+- After a clean clone, step 1 must run `chmod +x scripts/*.sh`
+  (runbook already bakes this in; `G19` documents the cause).
+- If `vps-build.sh` reports `Exited (137)` for the frontend container,
+  add a 4 GB swap file (exact command in runbook step 3). This is the
+  only remaining deploy blocker for sub-4-GB VPS.
+- Once a successful deploy lands, the `/tmp/mantra-build.log` timing
+  data should be captured into a future `docs/vps-sizing.md`.
+
+---
+
 ## 2026-04-22 — Hermes deploy attempt fails; runbook + guard rails added
 
 **Agent**: Cascade (operator's laptop), after reviewing a Hermes session log

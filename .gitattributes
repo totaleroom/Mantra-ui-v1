@@ -1,0 +1,46 @@
+# ============================================================
+# Line-ending policy.
+#
+# Shell scripts, Dockerfiles and POSIX config files must stay LF so
+# they run on Linux even when the repo is cloned on Windows. Without
+# this, Windows editors convert CRLF on checkout and the shebang line
+# becomes `#!/usr/bin/env bash\r`, which the Linux loader reads as a
+# missing interpreter.
+#
+# Default is "auto" so normal text files behave naturally.
+# ============================================================
+
+* text=auto
+
+# Shell scripts — MUST be LF.
+*.sh           text eol=lf
+*.bash         text eol=lf
+
+# Dockerfiles — linuxy config, MUST be LF.
+Dockerfile     text eol=lf
+*.Dockerfile   text eol=lf
+.dockerignore  text eol=lf
+
+# YAML / TOML / JSON — LF keeps diffs clean across platforms.
+*.yml          text eol=lf
+*.yaml         text eol=lf
+*.toml         text eol=lf
+*.json         text eol=lf
+
+# Go source — project consensus is LF.
+*.go           text eol=lf
+go.mod         text eol=lf
+go.sum         text eol=lf
+
+# PowerShell — keep CRLF so it runs natively on Windows.
+*.ps1          text eol=crlf
+
+# Binary files — never touch.
+*.png          binary
+*.jpg          binary
+*.jpeg         binary
+*.webp         binary
+*.ico          binary
+*.woff         binary
+*.woff2        binary
+*.ttf          binary

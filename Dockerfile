@@ -9,14 +9,17 @@ FROM node:20-alpine AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
-RUN npm install -g pnpm@latest
+# Pin pnpm to the same major version that produced pnpm-lock.yaml
+# (lockfileVersion: "9.0", produced by pnpm 9.x/10.x). `pnpm@latest`
+# would silently pull a future major and fail the frozen-lockfile check.
+RUN npm install -g pnpm@10
 
 COPY package.json pnpm-lock.yaml* ./
 RUN pnpm install --frozen-lockfile
 
 # ── Stage 2: Builder ──────────────────────────────────────────
 FROM node:20-alpine AS builder
-RUN npm install -g pnpm@latest
+RUN npm install -g pnpm@10
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
@@ -41,6 +44,14 @@ ENV NEXT_PUBLIC_EVO_URL=$NEXT_PUBLIC_EVO_URL
 ENV NEXT_PUBLIC_BASE_URL=$NEXT_PUBLIC_BASE_URL
 ENV NEXT_PUBLIC_EVO_INSTANCE_NAME=$NEXT_PUBLIC_EVO_INSTANCE_NAME
 ENV NEXT_TELEMETRY_DISABLED=1
+
+# Cap Node heap at 1.5 GB during build. Our target VPS (4 GB RAM)
+# coexists with postgres+redis+evolution+backend during the build
+# itself; uncapped, `next build` can spike past 2 GB and the kernel
+# starts swapping heavily (or OOM-kills). 1.5 GB is enough for the
+# current bundle size (~200 routes) and leaves headroom for the
+# other containers. Bump if the bundle grows past this envelope.
+ENV NODE_OPTIONS="--max-old-space-size=1536"
 
 RUN pnpm build
 

@@ -1,0 +1,32 @@
+# ============================================================
+# docker-compose.public.yaml
+#
+# Override layer for public IP / sslip.io smoke-test deploys.
+# The base docker-compose.yaml keeps frontend/backend/evolution ports
+# bound to internal networks (Coolify/Traefik routes them via reverse
+# proxy). When we don't have a reverse proxy — e.g. during the VPS
+# smoke test reached through http://<ip-dash>.sslip.io:5000 — we need
+# the host ports bound directly.
+#
+# Usage:
+#   docker compose \
+#     -f docker-compose.yaml \
+#     -f docker-compose.public.yaml \
+#     up -d --build
+#
+# DO NOT use this override for production behind Coolify. Keep the
+# ports internal there so only Traefik terminates TLS. See DEPLOY_COOLIFY.md.
+# ============================================================
+
+services:
+  frontend:
+    ports:
+      - "5000:5000"
+
+  backend:
+    ports:
+      - "3001:3001"
+
+  evolution:
+    ports:
+      - "8080:8080"

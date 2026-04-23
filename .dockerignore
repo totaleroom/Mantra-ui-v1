@@ -1,0 +1,61 @@
+# ============================================================
+# Build context exclusions for the frontend + backend Dockerfiles.
+# Keeping this file small-but-thorough cuts our `docker build` context
+# upload from ~800 MB to ~20 MB on a typical dev machine and prevents
+# stale host-side `.next/` or `node_modules/` from poisoning the
+# deterministic in-container build.
+# ============================================================
+
+# Version control + editor
+.git
+.gitignore
+.gitattributes
+.vscode
+.idea
+*.swp
+
+# Node / Next.js build outputs (recreated inside the container)
+node_modules
+.next
+.pnpm-store
+out
+dist
+build
+
+# Environment files — secrets must be passed via `--env-file`,
+# never baked into the image layers.
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+.env.test
+
+# Go build cache (backend Dockerfile re-downloads)
+backend/tmp
+backend/bin
+
+# Local docker compose overrides — prod overrides are pulled from
+# repo explicitly with `-f docker-compose.public.yaml`.
+docker-compose.dev.yaml
+docker-compose.override.yaml
+
+# Test + coverage artifacts
+coverage
+.nyc_output
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Docs that don't belong in the runtime image
+.agent
+*.md
+!README.md
+DEPLOY_*.md
+HANDOFF_*.md
+
+# Local tooling state
+.turbo
+.swc
+.cache
