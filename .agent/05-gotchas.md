@@ -480,3 +480,63 @@ loses WhatsApp session state on container restart.
 must match the pinned image tag (`evoapicloud/evolution-api:v2.3.7`).
 Docs on `atendai/evolution-api` or untagged "latest" examples online
 typically reference v2.1 schema and will mislead you.
+
+---
+
+## G24 — Frontend login fails with "Cannot reach the server" in Docker
+
+**Symptom**: Login page renders, but submitting credentials shows
+"Cannot reach the server. Please try again." The backend health
+endpoint (`/health`) returns 200 when accessed directly.
+
+**Cause**: `serverConfig` in `lib/config.ts` was a static object
+evaluated at module load time. Next.js evaluates modules during the
+build phase when Docker runtime env vars (like `BACKEND_INTERNAL_URL`)
+are not available. The cached object had empty strings for all env
+vars, causing `callLoginAPI` to use an empty `apiUrl`.
+
+**Fix**: Convert `serverConfig` from a static object to a function
+`getServerConfig()` that reads `process.env` at call time. Update
+all consumers:
+
+- `lib/auth.ts` — `callLoginAPI()`, `getJwtSecret()`, `devAuthIssue()`
+- `middleware.ts` — `getJwtSecret()`, `decodeSession()`
+- `app/change-password/actions.ts` — `changePasswordAction()`
+
+```typescript
+// lib/config.ts — before (BROKEN in Docker)
+export const serverConfig = typeof window === 'undefined'
+  ? { backendInternalUrl: serverEnv('BACKEND_INTERNAL_URL') }
+  : null
+
+// lib/config.ts — after (works in Docker)
+export function getServerConfig() {
+  if (typeof window !== 'undefined') return null
+  return { backendInternalUrl: serverEnv('BACKEND_INTERNAL_URL') }
+}
+```
+
+**Prevention**: Never read `process.env.*` at module scope in Next.js
+files that run as Server Actions. Always use a function or access
+env vars inside the request handler/action.
+
+---
+
+## G25 — "use server" actions fail with "Cannot find module 'xyz'"
+
+**Symptom**: Server Action throws module resolution error even though
+the module is in `node_modules` and works in pages/components.
+
+**Cause**: Next.js 14+ bundles Server Actions separately from the page
+bundle. If the action imports from a file that has side-effects or
+imports Node-only modules at the top level, the bundler may fail to
+include dependencies correctly.
+
+**Fix**: Keep Server Action files lean. Move shared logic to utility
+files that don't import server-only modules at the top level, or
+use dynamic imports inside the action function.
+
+**Prevention**: Server Actions should only import from:
+- `next/*` modules
+- Database/auth utilities that are server-safe
+- Schema/types (not implementation with side effects)

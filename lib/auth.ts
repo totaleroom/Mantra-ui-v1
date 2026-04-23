@@ -1,6 +1,6 @@
 import { jwtVerify, SignJWT, type JWTPayload } from 'jose'
 import { cookies } from 'next/headers'
-import { publicConfig, serverConfig } from './config'
+import { publicConfig, getServerConfig } from './config'
 
 export const SESSION_COOKIE = 'mantra_session'
 
@@ -13,7 +13,7 @@ export interface MantraSession {
 }
 
 function getJwtSecret(): Uint8Array {
-  const secret = serverConfig?.jwtSecret
+  const secret = getServerConfig()?.jwtSecret
   if (!secret) {
     throw new Error('[Auth] JWT_SECRET environment variable is not set')
   }
@@ -56,7 +56,7 @@ export interface LoginResult {
  * Active only when DEV_AUTH_BYPASS=true AND NODE_ENV !== 'production'.
  * Accepts any of the seed accounts (admin@mantra.ai, demo@mantra.ai) + any password.
  *
- * Belt-and-suspenders: the caller guards on serverConfig.devAuthBypass,
+ * Belt-and-suspenders: the caller guards on getServerConfig()?.devAuthBypass,
  * but we ALSO re-check NODE_ENV inside this function so there is no
  * possible code path that emits a bypass token in production even if a
  * future refactor forgets the outer check.
@@ -66,7 +66,7 @@ async function devAuthIssue(email: string): Promise<LoginResult> {
     return { ok: false, error: 'dev auth is disabled in production' }
   }
 
-  const secret = serverConfig?.jwtSecret
+  const secret = getServerConfig()?.jwtSecret
   if (!secret) {
     return { ok: false, error: '[DEV] JWT_SECRET not set in .env' }
   }
@@ -98,7 +98,7 @@ export async function callLoginAPI(email: string, password: string): Promise<Log
   // Prefer BACKEND_INTERNAL_URL for server-to-server calls (docker network / VPS internal)
   // Fall back to NEXT_PUBLIC_API_URL for dev environments
   const apiUrl =
-    serverConfig?.backendInternalUrl ||
+    getServerConfig()?.backendInternalUrl ||
     publicConfig.apiUrl
 
   let res: Response
@@ -111,7 +111,7 @@ export async function callLoginAPI(email: string, password: string): Promise<Log
     })
   } catch {
     // Backend unreachable — dev bypass (only in dev mode)
-    if (serverConfig?.devAuthBypass) {
+    if (getServerConfig()?.devAuthBypass) {
       console.warn('[Auth] Backend unreachable, using DEV_AUTH_BYPASS for', email)
       return devAuthIssue(email)
     }
@@ -122,7 +122,7 @@ export async function callLoginAPI(email: string, password: string): Promise<Log
 
   if (!res.ok) {
     // If backend rejects (e.g., no DB), try dev bypass as last resort
-    if (serverConfig?.devAuthBypass) {
+    if (getServerConfig()?.devAuthBypass) {
       console.warn('[Auth] Backend rejected login, using DEV_AUTH_BYPASS for', email)
       return devAuthIssue(email)
     }

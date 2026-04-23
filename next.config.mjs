@@ -174,6 +174,11 @@ const nextConfig = {
             'localhost:5000',
             '127.0.0.1:5000',
             '0.0.0.0:5000',
+            // Ephemeral ports for Windsurf/VSCode browser-preview proxy.
+            // Without this, Server Actions return 403 "x-forwarded-host
+            // does not match origin" when tested through the IDE preview.
+            'localhost:*',
+            '127.0.0.1:*',
           ],
         },
   },

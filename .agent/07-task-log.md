@@ -5,6 +5,97 @@
 
 ---
 
+## 2026-04-23 — Frontend login fix: serverConfig runtime evaluation
+
+**Agent**: Cascade (operator's laptop), fixing "Cannot reach the server" login error
+
+**What**: Login page rendered but submitting credentials showed
+"Cannot reach the server. Please try again." The backend health endpoint
+was responding correctly, indicating a frontend→backend communication failure.
+
+**Root cause**: `serverConfig` in `lib/config.ts` was a static object
+evaluated at module load time. During Next.js build phase, Docker runtime
+env vars (like `BACKEND_INTERNAL_URL=http://backend:3001`) were not
+available. The cached `serverConfig` object had empty strings for all
+server-side env vars, causing `callLoginAPI()` to construct an invalid
+URL (`undefined/api/auth/login`) which fetch rejected.
+
+**Changes**:
+
+- `lib/config.ts` — converted `serverConfig` static object to
+  `getServerConfig()` function that reads `process.env` at call time.
+  Deleted the deprecated `serverConfig` static re-export entirely
+  (nothing imported it; keeping it would have let a future refactor
+  silently re-introduce the same build-time caching bug).
+  Default export's `server` property is now a getter that calls
+  `getServerConfig()` on every access, so `import config from
+  '@/lib/config'; config.server.jwtSecret` is also safe.
+  Top-of-file doc comment updated to document why lazy evaluation
+  is mandatory (cross-references G24).
+
+- `lib/auth.ts` — updated all 5 references:
+  - `getJwtSecret()` — `serverConfig?.jwtSecret` → `getServerConfig()?.jwtSecret`
+  - `devAuthIssue()` — same change
+  - `callLoginAPI()` — `serverConfig?.backendInternalUrl` → `getServerConfig()?.backendInternalUrl`
+  - `callLoginAPI()` catch blocks — `serverConfig?.devAuthBypass` → `getServerConfig()?.devAuthBypass`
+
+- `middleware.ts` — updated 2 references:
+  - `getJwtSecret()` — uses `getServerConfig()?.jwtSecret`
+  - `decodeSession()` — uses `getServerConfig()?.jwtSecret`
+
+- `app/change-password/actions.ts` — updated 1 reference:
+  - `changePasswordAction()` — `serverConfig?.backendInternalUrl` → `getServerConfig()?.backendInternalUrl`
+
+- `next.config.mjs` — extended `experimental.serverActions.allowedForwardedHosts`
+  to accept `localhost:*` and `127.0.0.1:*` (dev only). Without this,
+  Server Actions return 403 "x-forwarded-host does not match origin"
+  when the dev server is reached through Windsurf/VSCode browser
+  preview proxies, which rotate ephemeral ports. Production is
+  untouched — `experimental.serverActions` stays `undefined` under
+  `isProd`.
+
+- `.agent/05-gotchas.md` — added G24 documenting the failure mode,
+  root cause, fix pattern, and prevention guidance. Added G25 as a
+  related gotcha for Server Action module resolution issues.
+
+**Verification (local)**:
+
+- Fresh `pnpm dev` on Windows laptop: `GET /login` returned 200,
+  `POST /login` returned **303** (successful Server Action → cookie
+  set → redirect) in ~4s. `loginAction` ran cleanly; DEV_AUTH_BYPASS
+  minted a local JWT when the docker-internal `http://backend:3001`
+  hostname predictably failed to resolve on the laptop.
+- Dashboard fetches to `/api/clients`, `/api/whatsapp/instances` do
+  fail locally with `ENOTFOUND backend` — that is **expected** because
+  the rewrite target resolves only inside the Docker network. Under
+  `docker compose` on the VPS that hostname resolves and these calls
+  will succeed.
+- `grep serverConfig lib app middleware.ts` → zero hits outside the
+  doc comment in `lib/config.ts`. Every consumer uses `getServerConfig()`.
+
+**Follow-ups for next agent / Hermes re-run**:
+
+- Rebuild the frontend container only (backend / postgres / redis /
+  evolution images do not change):
+  ```bash
+  cd /root/project/web-apps/Mantra-ui-v1
+  docker compose build frontend
+  docker compose up -d frontend
+  ```
+- Verify `BACKEND_INTERNAL_URL=http://backend:3001` is set inside the
+  container: `docker exec mantra_frontend env | grep BACKEND_INTERNAL_URL`.
+- End-to-end login smoke test:
+  1. `curl -sS http://localhost:5000/login` → 200
+  2. Browser login → backend returns 200 with JWT → frontend sets cookie
+  3. Redirect to `/change-password` (seeded account forces rotation)
+  4. Rotate password → redirect to `/` → dashboard loads
+- If login still fails: `docker exec mantra_frontend wget -qO- http://backend:3001/health`
+  must return the JSON health document. If it does not, the backend
+  container is unhealthy and must be addressed before the frontend fix
+  can be observed.
+
+---
+
 ## 2026-04-23 (late afternoon) — Evolution Redis config finished; full stack green
 
 **Agent**: Cascade, after Hermes reported a successful smoke test with

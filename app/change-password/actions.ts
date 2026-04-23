@@ -3,7 +3,7 @@
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { SESSION_COOKIE } from '@/lib/auth'
-import { serverConfig } from '@/lib/config'
+import { getServerConfig } from '@/lib/config'
 
 export interface ChangePasswordState {
   error?: string
@@ -46,7 +46,7 @@ export async function changePasswordAction(
   }
 
   const backend =
-    serverConfig?.backendInternalUrl ||
+    getServerConfig()?.backendInternalUrl ||
     process.env.NEXT_PUBLIC_API_URL ||
     'http://localhost:3001'
 
