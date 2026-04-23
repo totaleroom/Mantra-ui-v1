@@ -52,8 +52,16 @@ real friction points that had nothing to do with the Phase A/B code:
   `PUBLIC_URL`, derive service-specific URLs from the host component
   only, avoid string-concat of ports.
 - `pnpm-lock.yaml` — regenerated clean against current `package.json`.
+- `tsconfig.json` — added `docs`, `backend`, `.next/dev` to `exclude`.
+  Before this, `docs/schema.ts` (a Drizzle-era historical reference) was
+  swept into every `tsc`/`next build` run and failed on fresh installs
+  because `drizzle-orm` was no longer in `package.json`. Local `tsc`
+  masked the bug because stale `node_modules/drizzle-orm` from months-old
+  installs still satisfied the import. See G20.
 - `.agent/12-vps-deploy-runbook.md` — Step 3 now references the helper
   script; OOM remediation documented inline.
+- `.agent/05-gotchas.md` — new G20 explains the tsconfig/docs/drizzle
+  interaction and why the file must not be deleted.
 
 **Verification (local)**:
 

@@ -316,3 +316,32 @@ This is now baked into `.agent/12-vps-deploy-runbook.md` Step 1.
 `git update-index --chmod=+x scripts/*.sh && git commit -m "fix: script +x bit"`.
 Once that commit is in `origin/main`, future clones inherit it. Until
 that happens, keep the `chmod +x` in Step 1.
+
+---
+
+## G20 — `docs/schema.ts` imports drizzle-orm, breaks fresh-install builds
+
+**Symptom**: Docker build fails in the frontend `builder` stage with
+`Cannot find module 'drizzle-orm/pg-core'` pointing at
+`docs/schema.ts`. Local `tsc --noEmit` on the operator's machine
+passes even though Docker fails.
+
+**Cause**: `docs/schema.ts` is a historical Drizzle-era schema
+reference kept for documentation. It is NOT part of the runtime — we
+migrated to Go + raw SQL in Phase A. But `tsconfig.json` originally
+had `"include": ["**/*.ts", "**/*.tsx"]` with only `node_modules` in
+`exclude`, so the compiler pulled in `docs/schema.ts`. On the
+operator's laptop `node_modules/drizzle-orm` still existed as a leftover
+from a months-old install, so the resolve succeeded and tsc passed —
+masking the bug. A fresh Docker build does `pnpm install
+--frozen-lockfile`, gets no drizzle (it isn't in `package.json`
+anymore), and the compile fails.
+
+**Fix** (done 2026-04-23): `tsconfig.json` now excludes `docs`,
+`backend`, and `.next/dev`. The file is kept in-repo as historical
+schema documentation but is invisible to the TypeScript compiler.
+
+**Never delete `docs/schema.ts`** — it's the clearest single-file
+description of the old schema shape, useful when migrating data from
+a pre-Phase-A dump. If you want to keep doc files out of the build,
+add them to `tsconfig.exclude`; don't delete them.
